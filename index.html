@@ -16,7 +16,8 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#2f6b4f" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#121a15" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232f6b4f'/%3E%3Cpath d='M20 44c0-14 10-24 26-26-2 16-12 26-26 26z' fill='%23e8f3ea'/%3E%3Cpath d='M20 44l14-14' stroke='%232f6b4f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" href="logo-icon.png">
+  <link rel="apple-touch-icon" href="logo-icon.png">
   <link rel="stylesheet" href="leaflet.css">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="agent.css">
@@ -30,11 +31,7 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="#/welcome" aria-label="Reach home">
-        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r="30" />
-          <path class="leaf" d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z" />
-          <path class="vein" d="M20 44l14-14" />
-        </svg>
+        <img class="brand-mark" src="logo-mark.png" alt="" width="38" height="38">
         <span class="brand-text">
           <span class="brand-name">Reach</span>
           <span class="brand-tagline">Less Searching. More Exploring.</span>
@@ -56,11 +53,7 @@
     <!-- ===== Welcome cover: shown on the first visit, and from the logo ===== -->
     <section class="view cover" id="view-welcome" data-view="welcome" aria-labelledby="cover-title" hidden>
       <div class="cover-text">
-        <svg class="cover-mark brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r="30" />
-          <path class="leaf" d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z" />
-          <path class="vein" d="M20 44l14-14" />
-        </svg>
+        <img class="cover-mark brand-mark" src="logo-mark.png" alt="" width="96" height="96">
         <h1 id="cover-title" class="cover-title">Reach</h1>
         <p class="cover-tagline">Less Searching. More Exploring.</p>
         <p class="cover-lede">Parks and study spots that fit the free time you have between classes. Tell us your window and we'll find somewhere you can get to, enjoy, and get back from on time.</p>
@@ -295,42 +288,10 @@
       </div>
       <p class="schedule-now" id="schedule-now" aria-live="polite"></p>
 
-      <form id="class-form" class="step class-form" novalidate>
-        <h2 class="class-form-title" id="class-form-title">Add a class</h2>
-        <div class="class-field">
-          <label for="class-name">Class name</label>
-          <input type="text" id="class-name" name="name" maxlength="60" placeholder="e.g. CS 46A" autocomplete="off">
-        </div>
-        <div class="class-field">
-          <label for="class-room">Room / building <span class="optional">(optional)</span></label>
-          <input type="text" id="class-room" name="room" maxlength="60" placeholder="e.g. MacQuarrie Hall 222" autocomplete="off">
-        </div>
-        <fieldset class="class-field class-days">
-          <legend>Days</legend>
-          <div class="chips" id="class-days"></div>
-        </fieldset>
-        <!-- Time boxes format themselves: type 930 and get 9:30 AM (see "Smart time field" in app.js) -->
-        <div class="class-times">
-          <div class="class-field">
-            <label for="class-start">Starts</label>
-            <input type="text" id="class-start" name="start" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
-          </div>
-          <div class="class-field">
-            <label for="class-end">Ends</label>
-            <input type="text" id="class-end" name="end" inputmode="numeric" autocomplete="off" placeholder="e.g. 1045">
-          </div>
-        </div>
-        <p class="form-error" id="class-error" role="alert" hidden></p>
-        <div class="actions">
-          <button type="submit" class="btn btn-primary" id="class-submit">Add class</button>
-          <button type="button" class="btn" id="class-cancel" hidden>Cancel</button>
-        </div>
-      </form>
-
       <!-- Tests, quizzes and exams for your classes -->
       <section class="tests" aria-labelledby="tests-title">
         <div class="section-head">
-          <h2 id="tests-title">Upcoming tests</h2>
+          <h2 id="tests-title">Upcoming Tests</h2>
           <button type="button" class="btn btn-small" id="add-test-btn">Add test</button>
         </div>
 
@@ -350,7 +311,7 @@
               <input type="date" id="test-date" name="date">
             </div>
             <div class="class-field">
-              <label for="test-time">Time <span class="optional">(optional)</span></label>
+              <label for="test-time">Time</label>
               <input type="text" id="test-time" name="time" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
             </div>
           </div>
@@ -368,7 +329,46 @@
         <div id="tests-list"></div>
       </section>
 
-      <div id="schedule-list" class="schedule-list"></div>
+      <!-- Your classes: add one, then the week below -->
+      <section class="classes" aria-labelledby="classes-title">
+        <div class="section-head">
+          <h2 id="classes-title">Your Classes</h2>
+        </div>
+
+        <form id="class-form" class="step class-form" novalidate>
+          <h3 class="class-form-title" id="class-form-title">Add a class</h3>
+          <div class="class-field">
+            <label for="class-name">Class name</label>
+            <input type="text" id="class-name" name="name" maxlength="60" placeholder="e.g. CS 46A" autocomplete="off">
+          </div>
+          <div class="class-field">
+            <label for="class-room">Room / building <span class="optional">(optional)</span></label>
+            <input type="text" id="class-room" name="room" maxlength="60" placeholder="e.g. MacQuarrie Hall 222" autocomplete="off">
+          </div>
+          <fieldset class="class-field class-days">
+            <legend>Days</legend>
+            <div class="chips" id="class-days"></div>
+          </fieldset>
+          <!-- Time boxes format themselves: type 930 and get 9:30 AM (see "Smart time field" in app.js) -->
+          <div class="class-times">
+            <div class="class-field">
+              <label for="class-start">Starts</label>
+              <input type="text" id="class-start" name="start" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
+            </div>
+            <div class="class-field">
+              <label for="class-end">Ends</label>
+              <input type="text" id="class-end" name="end" inputmode="numeric" autocomplete="off" placeholder="e.g. 1045">
+            </div>
+          </div>
+          <p class="form-error" id="class-error" role="alert" hidden></p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="class-submit">Add class</button>
+            <button type="button" class="btn" id="class-cancel" hidden>Cancel</button>
+          </div>
+        </form>
+
+        <div id="schedule-list" class="schedule-list"></div>
+      </section>
     </section>
 
     <!-- ===== View 3: Favorites ===== -->
@@ -397,6 +397,8 @@
   <script src="leaflet.js" defer></script>
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
+  <!-- Real travel times for the place on screen (map card + Ask Reach) -->
+  <script src="routing.js" defer></script>
   <!-- Ask Reach: pattern agent + the "how are you feeling?" assistant -->
   <script src="agent.js" defer></script>
   <script src="assistant.js" defer></script>

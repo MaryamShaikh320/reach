@@ -1380,12 +1380,13 @@ function saveButtonHTML(placeId, compact = false) {
   </button>`;
 }
 
-/** The two numbers that matter: time to get there, and time you can spend there. */
-function tripStatsHTML(fit, mode) {
-  const short = fit.verdict === 'short';
+/** The two numbers that matter: time to get there, and time you can spend there.
+    `openEnded` (no class to be back for, and no time given): only the time to get there. */
+function tripStatsHTML(fit, mode, openEnded = false) {
+  const short = fit.verdict === 'short' && !openEnded;
   return `<div class="trip-stats">
       <div class="trip-stat"><span class="trip-value">${esc(fmtDuration(fit.travel.thereMin))}</span><span class="trip-label">to get there ${esc(mode.by)}</span></div>
-      <div class="trip-stat stay-stat ${short ? 'is-short' : 'is-enough'}"><span class="trip-value">${esc(fmtDuration(fit.onSiteMin))}</span><span class="trip-label">you can spend there</span></div>
+      ${openEnded ? '' : `<div class="trip-stat stay-stat ${short ? 'is-short' : 'is-enough'}"><span class="trip-value">${esc(fmtDuration(fit.onSiteMin))}</span><span class="trip-label">you can spend there</span></div>`}
     </div>
     ${short ? `<p class="short-note">Less than the ${esc(fmtDuration(fit.wantStayMin))} you wanted</p>` : ''}`;
 }
@@ -1450,7 +1451,7 @@ function mapCardHTML(fit, i, results) {
       </div>
       <h2 class="mc-title">${esc(place.name)}</h2>
       <p class="mc-sub">${esc(sub.join(' · '))}</p>
-      ${tripStatsHTML(fit, mode)}
+      ${tripStatsHTML(fit, mode, Boolean(results.prefs.openEnded))}
       ${altModeHTML(fit, results)}
       ${fit.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}
       <p class="mc-desc">${esc(place.description)}</p>
@@ -2497,10 +2498,26 @@ function upcomingTests() {
 const className = (id) => { const c = getClasses().find((x) => x.id === id); return c ? c.name : 'Class'; };
 
 /** Today's situation: the class you're in now, or the next one today (with minutes until it starts). */
+/** Today's fixed points, earliest first: your classes, plus today's tests (every test has a time).
+    A test at its class's usual time takes that class's place; a test at another time (a 7 PM final)
+    is added, lasting as long as its class (or an hour). Each has { name, start, end } like a class. */
+function todaysEvents(date = new Date()) {
+  const day = DAY_KEYS[date.getDay()];
+  const events = getClasses().filter((c) => c.days.includes(day)).map((c) => ({ ...c }));
+  getTests().filter((t) => t.date === isoDate(date) && t.time).forEach((t) => {
+    const cls = getClasses().find((c) => c.id === t.classId);
+    const name = `${cls ? cls.name : 'Class'} ${t.type}`; // "PHYS 4A Test"
+    const sameSlot = events.find((e) => e.id === t.classId && e.start === t.time);
+    if (sameSlot) { sameSlot.name = name; sameSlot.test = t; return; }
+    const endMin = Math.min(24 * 60 - 1, hhmmToMin(t.time) + (cls ? hhmmToMin(cls.end) - hhmmToMin(cls.start) : 60));
+    events.push({ id: t.id, name, start: t.time, end: `${pad2(Math.floor(endMin / 60))}:${pad2(endMin % 60)}`, test: t });
+  });
+  return events.sort((a, b) => hhmmToMin(a.start) - hhmmToMin(b.start));
+}
+
 function scheduleStatus(date = new Date()) {
-  const today = DAY_KEYS[date.getDay()];
   const n = nowMin(date);
-  const todays = getClasses().filter((c) => c.days.includes(today)).sort((a, b) => hhmmToMin(a.start) - hhmmToMin(b.start));
+  const todays = todaysEvents(date); // classes and tests, so free time ends at a test too
   const current = todays.find((c) => hhmmToMin(c.start) <= n && n < hhmmToMin(c.end));
   const next = todays.find((c) => hhmmToMin(c.start) > n);
   return { hasClasses: getClasses().length > 0, current, next, freeMin: next ? hhmmToMin(next.start) - n : null };
@@ -2520,11 +2537,10 @@ function soonTest() {
 
 /** Pick the kind of spot and the time window from the schedule:
     a test in the next 3 days -> a quiet study spot; otherwise -> a relaxing park.
-    The window runs until the next class (minus 5 minutes to walk in), or starts when the current class ends. */
+    The window runs until the next class or test (minus 5 minutes to walk in), or starts when the current one ends. */
 function decideSpot(s = scheduleStatus()) {
   const test = soonTest();
   const study = Boolean(test);
-  const today = DAY_KEYS[new Date().getDay()];
   let when = 'now';
   let laterTime = '';
   let untilMin = s.next ? hhmmToMin(s.next.start) : null;
@@ -2532,15 +2548,16 @@ function decideSpot(s = scheduleStatus()) {
     // In class now: leave when it ends, and be back for the class after it.
     when = 'later';
     laterTime = s.current.end;
-    const after = getClasses().filter((c) => c.days.includes(today) && hhmmToMin(c.start) >= hhmmToMin(s.current.end))
-      .sort((a, b) => hhmmToMin(a.start) - hhmmToMin(b.start))[0];
+    const after = todaysEvents().find((c) => hhmmToMin(c.start) >= hhmmToMin(s.current.end)); // class or test
     untilMin = after ? hhmmToMin(after.start) : null;
   }
   const fromMin = s.current ? hhmmToMin(s.current.end) : nowMin();
-  const freeMin = untilMin == null ? 120 : Math.min(720, Math.floor((untilMin - fromMin - 5) / 5) * 5);
+  // No class to be back for: search a 2-hour window, but it's open-ended, so cards don't claim a stay time.
+  const openEnded = untilMin == null;
+  const freeMin = openEnded ? 120 : Math.min(720, Math.floor((untilMin - fromMin - 5) / 5) * 5);
   // Study: stay for most of the window. Relax: a calm half hour (less if the gap is short).
   const stayMin = Math.max(10, Math.min(study ? 90 : 30, Math.floor((freeMin * (study ? 0.6 : 0.4)) / 5) * 5));
-  return { study, test, when, laterTime, freeMin, stayMin, label: study ? 'Find a study spot' : 'Find a relaxation spot' };
+  return { study, test, when, laterTime, freeMin, stayMin, openEnded, label: study ? 'Find a study spot' : 'Find a relaxation spot' };
 }
 
 /** Plan page banner: free time before your next class, a heads-up about tests,
@@ -2586,6 +2603,7 @@ async function goToBestSpot(pick, btn) {
     time: 'custom', customMinutes: String(pick.freeMin), freeMin: pick.freeMin,
     stay: 'custom', stayCustom: String(pick.stayMin), wantStayMin: pick.stayMin,
     when: pick.when, laterTime: pick.laterTime,
+    openEnded: Boolean(pick.openEnded), // no class to be back for: don't show a stay time
   };
   fillForm(form, prefs); // so the form matches if they come back to tweak it
 
@@ -2632,7 +2650,7 @@ function renderTests() {
     const n = daysUntil(t.date);
     return `<li class="test-item${n <= 2 ? ' is-soon' : ''}">
       <span class="test-when"><span class="countdown">${countdownText(n)}</span>
-        <span class="class-time">${esc(fmtDay(t.date))}${t.time ? ` · ${esc(fmtClock(t.time))}` : ''}</span></span>
+        <span class="class-time">${esc(fmtDay(t.date))} · ${t.time ? esc(fmtClock(t.time)) : '<strong class="needs-time">Add a time</strong>'}</span></span>
       <span class="class-info"><strong>${esc(t.type)} · ${esc(className(t.classId))}</strong>${t.note ? `<span class="class-room">${esc(t.note)}</span>` : ''}</span>
       <span class="class-actions">
         <button type="button" class="btn btn-small" data-edit-test="${esc(t.id)}">Edit</button>
@@ -2787,7 +2805,8 @@ function setupSchedule() {
     if (!f.classId.value) return showError('Pick a class.', f.classId);
     if (!f.date.value) return showError('Pick the date of the test.', f.date);
     if (daysUntil(f.date.value) < 0) return showError('That date has already passed.', f.date);
-    if (time === null) return showError('That time doesn\'t look right. Try something like 930, or leave it blank.', f.time);
+    // Required: Reach plans your free time around the test, so it needs to know when it starts.
+    if (!time) return showError(time === null ? 'That time doesn\'t look right. Try something like 930.' : 'Enter the time of the test.', f.time);
 
     const type = TEST_TYPES.includes(f.testType.value) ? f.testType.value : 'Test';
     const entry = { id: editingTestId || `t${Date.now().toString(36)}`, classId: f.classId.value, type, date: f.date.value, time, note: f.note.value.trim() };

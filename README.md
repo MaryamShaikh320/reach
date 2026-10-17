@@ -55,6 +55,8 @@ python3 -m http.server 8000
 | `destinations.json` | Curated San Jose places + San Jose ZIP centroids (used offline) |
 | `sw.js` | Offline cache (network-first, so you always get fresh code while developing) |
 | `leaflet.js`, `leaflet.css` | [Leaflet](https://leafletjs.com) 1.9.4 map library, bundled locally (BSD-2 license, see `LICENSE`). No build step, no CDN |
+| `logo-mark.png`, `logo-icon.png` | Reach's tree-and-hand logo: the mark on a transparent background (header, welcome page, Ask Reach), and on a white rounded square (browser tab and home-screen icon) |
+| `routing.js` | Real travel times (Geoapify Routing, same key) for the place on screen: the map's place card and Ask Reach's walking/transit/driving rows. The app's quick estimates are still used to decide which places fit |
 | `agent.js`, `agent.css` | Pattern agent: learns which spots you pick at which moments (day, time, classes) and suggests "your usual". Stored on this device only |
 | `assistant.js`, `assistant.css` | **Ask Reach** assistant: tell it how you feel ("stressed", "need coffee", "I have 30 min") and it picks a spot using your schedule, tests and the pattern agent. Rule-based, no AI service or key. Its ids and classes start with `ask-` |
 | `chat.js`, `chat.css` | Local Chat: per-place chat rooms, opened from the **Chat** button on map cards (see **Local Chat** below) |

@@ -104,10 +104,7 @@ main:focus, main:focus-visible { outline: none; } /* main is focused after navig
 }
 .header-inner { max-width: 1140px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); min-width: 0; }
-.brand-mark { width: 38px; height: 38px; flex: none; }
-.brand-mark circle { fill: var(--primary); }
-.brand-mark .leaf { fill: var(--primary-soft); }
-.brand-mark .vein { stroke: var(--primary); stroke-width: 3; stroke-linecap: round; fill: none; }
+.brand-mark { width: 38px; height: 38px; flex: none; object-fit: contain; } /* logo-mark.png: the tree-and-hand logo */
 .brand-text { display: flex; flex-direction: column; min-width: 0; }
 .brand-name { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; line-height: 1.1; }
 .brand-tagline { font-size: .72rem; color: var(--muted); white-space: nowrap; }
@@ -243,6 +240,7 @@ input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px
 
 /* Trip stats: time to get there + time you can spend there */
 .trip-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.trip-stats > :only-child { grid-column: 1 / -1; } /* only the travel time (no class to be back for) */
 .trip-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-2); }
 .trip-stat.stay-stat { background: var(--primary-soft); }
 .trip-value { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; line-height: 1.15; white-space: nowrap; }
@@ -618,7 +616,7 @@ body.map-mode .site-footer { display: none; }
   min-height: calc(100vh - 140px); padding: 24px 0;
 }
 .cover-text { max-width: 34em; }
-.cover-mark { width: 64px; height: 64px; margin-bottom: 18px; }
+.cover-mark { width: 96px; height: 96px; margin-bottom: 14px; }
 .cover-title { font-size: clamp(3.6rem, 13vw, 6.4rem); font-weight: 700; line-height: .95; letter-spacing: -0.02em; }
 .cover-tagline { margin: 14px 0 0; font-size: clamp(1.15rem, 3.6vw, 1.5rem); font-weight: 700; color: var(--primary); }
 .cover-lede { margin: 14px 0 0; color: var(--muted); font-size: 1.05rem; }
@@ -657,7 +655,9 @@ body.map-mode .site-footer { display: none; }
 select { width: 100%; cursor: pointer; }
 
 /* ---------- Tests ---------- */
-.tests { max-width: 680px; margin: 0 0 22px; }
+.tests { max-width: 680px; margin: 0 0 32px; }
+.classes { max-width: 680px; }
+.needs-time { color: var(--tight); } /* a test saved before times were required */
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .section-head h2 { font-size: 1.3rem; }
 .tests .class-form { margin-bottom: 14px; }

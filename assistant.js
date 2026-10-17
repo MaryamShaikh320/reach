@@ -16,10 +16,15 @@
         want to do, the setting, how you'll travel and how much time.
      3. Planning: anything you didn't say is filled from your schedule
         (free time until the next class), your tests, and what the pattern
-        agent knows you like (agent.js).
+        agent knows you like (agent.js). The Plan page's form settings are
+        never used, and the chat never changes them (only the ZIP code is
+        borrowed, as a starting point when location is off).
      4. Search: it runs the app's own search (runSearch), so every pick
         fits your free time, opening hours, sunset and weather, then
-        explains the pick in plain words.
+        explains the pick in plain words. Each suggestion lists walking,
+        transit and driving with real route times (routing.js), and you pick
+        one for directions. "Time there" is only shown when there's a real
+        window: a class to be back for, or a time you said ("I have 45 min").
    ===================================================================== */
 (() => {
 'use strict';
@@ -81,7 +86,8 @@ const SETTING_WORDS_IN = [
 ];
 
 const MODE_WORDS = [
-  ['walking', /\b(on foot|walk there|walking distance|walkable)\b/],
+  // "I'll walk" / "walking there" is how you'll get there, not the activity (see `understand`)
+  ['walking', /\b(on foot|by foot|walk(ing)? there|walking distance|walkable|(i'?ll|i will|i can|i'?m|i am|let'?s|we'?ll) (just )?walk(ing)?)\b/],
   ['driving', /\b(drive|driving|car)\b/],
   ['transit', /\b(bus|transit|train|light rail|vta)\b/],
 ];
@@ -130,10 +136,11 @@ function understand(text) {
     mood, focus, type, zip,
     freeMin: minutes ? clamp(minutes, 10, 720) : null,
     kind: type || focus ? 'study' : PARK_WORDS.test(t) ? 'parks' : null,
-    activity: firstMatch(ACTIVITY_WORDS, t),
+    // "I'll walk" names how you'll get there, so it isn't also read as wanting a walk
+    activity: MODE_WORDS[0][1].test(t) ? null : firstMatch(ACTIVITY_WORDS, t),
     environment: firstMatch(SETTING_WORDS_IN, t),
     mode: firstMatch(MODE_WORDS, t),
-    close: Boolean((mood && mood.close) || /\b(close|nearby|near me|not far|quick)\b/.test(t)),
+    close: Boolean((mood && mood.close) || /\b(close|closer|nearby|nearer|near me|not far|not as far|less far|quick)\b/.test(t)),
     explore: Boolean(mood && mood.explore),
     affirm: /^\s*(y|yes|yeah|yep|yup|sure|ok|okay|sounds good|let'?s go|let'?s do it|do it|please|why not|go)\b/.test(t),
     deny: /^\s*(no|nah|nope|not really|not now|not right now)\b/.test(t),
@@ -188,13 +195,15 @@ function usualMode(kind) {
   return top && top.share >= 0.5 && CONFIG.MODES[top.key] ? top.key : null;
 }
 
+/** Starting point when location is off: a ZIP typed in the chat, else the one on the Plan page. */
+const chatZip = () => chat.zip || (store.get(STORAGE_KEYS.prefs, {}) || {}).zip || '';
+
 const stayFor = (freeMin, study) => Math.max(10, Math.min(study ? 90 : 30, Math.floor((freeMin * (study ? 0.6 : 0.4)) / 5) * 5));
 
 /** Turn an intent into search prefs, filling the gaps from your schedule and your usual. */
 function makePlan(intent, extra = {}) {
   const s = scheduleStatus();
   const base = decideSpot(s); // the schedule's pick, adjusted to your usual for today (agent.js)
-  const saved = { ...DEFAULT_PREFS, ...store.get(STORAGE_KEYS.prefs, {}) };
   const mood = intent.mood;
   // Asking for a mood, an activity or a setting means a park; otherwise follow the schedule (a test -> study).
   const parkish = mood || intent.activity || intent.environment || intent.explore;
@@ -206,30 +215,41 @@ function makePlan(intent, extra = {}) {
   let envFrom = 'asked';
   if (!environment && liked) { environment = liked; envFrom = 'liked'; }
   if (!environment && mood) { environment = mood.plan.environment; envFrom = 'mood'; }
-  if (!environment) { environment = base.environment || saved.environment; envFrom = 'usual'; }
+  if (!environment) { environment = base.environment || DEFAULT_PREFS.environment; envFrom = 'usual'; }
 
   let freeMin = extra.freeMin || intent.freeMin || base.freeMin;
   if (extra.before) freeMin = Math.min(freeMin, extra.before - nowMin() - 10); // back 10 min before a test
   const sameAsBase = !intent.freeMin && !extra.freeMin && !extra.before && study === base.study;
   const stayMin = sameAsBase ? base.stayMin : stayFor(freeMin, study);
   const when = extra.when || (intent.freeMin ? 'now' : base.when);
+  // A real window: a class to be back for (from the schedule), or a time you gave. Otherwise it's open-ended:
+  // the search still needs a window, but suggestions don't claim how long you can stay.
+  const openEnded = !(intent.freeMin || extra.freeMin || extra.before) && Boolean(base.openEnded);
 
   return {
     prefs: {
-      ...saved,
+      ...DEFAULT_PREFS, // neutral defaults, never the Plan page's form settings
+      zip: chatZip(),
       kind: study ? 'study' : 'parks',
       activity: study ? 'studying' : intent.activity || (mood && mood.plan.activity) || base.activity || 'relaxing',
       environment: study ? 'quiet' : environment,
-      mode: intent.mode || usualMode(study ? 'study' : 'parks') || saved.mode,
+      // How you said or usually travel; otherwise search by car so every place reachable some way shows up.
+      // Each suggestion then lists walking, transit and driving times to choose from.
+      mode: intent.mode || usualMode(study ? 'study' : 'parks') || 'driving',
       time: 'custom', customMinutes: String(freeMin), freeMin,
       stay: 'custom', stayCustom: String(stayMin), wantStayMin: stayMin,
       when, laterTime: extra.laterTime || (when === 'later' ? base.laterTime : ''),
+      openEnded,
     },
     intent, envFrom, freeMin,
     type: intent.type,
     explore: intent.explore || Boolean(extra.explore),
     close: intent.close,
     note: extra.note || '',
+    keepPlace: extra.keepPlace || null, // the place on screen when you changed the time or the way there
+    keepMode: extra.keepMode || null,   // ...and the way there you named, which it must work by
+    closerThan: extra.closerThan || null, // "somewhere closer": only places nearer than this one
+    tweak: Boolean(extra.tweak),          // a follow-up to the last suggestion, not a fresh start
     tooShort: freeMin < 15,
   };
 }
@@ -248,6 +268,7 @@ const chat = {
   plan: null,
   lastActive: 0,
   afterZip: null,    // a plan waiting for your ZIP code
+  zip: '',           // ZIP typed in the chat (kept here, not written to the Plan page)
 };
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -322,8 +343,7 @@ async function onMessage(text) {
   const needZip = locationState.status !== 'ok';
 
   if (intent.zip && needZip) {
-    store.set(STORAGE_KEYS.prefs, { ...store.get(STORAGE_KEYS.prefs, {}), zip: intent.zip });
-    $('#zip').value = intent.zip;
+    chat.zip = intent.zip;
     if (chat.afterZip) { const plan = chat.afterZip; chat.afterZip = null; plan.prefs.zip = intent.zip; return suggest(plan); }
     return say(`Got it, I'll start from ${intent.zip}. How are you feeling?`, { chips: moodChips() });
   }
@@ -344,14 +364,21 @@ async function onMessage(text) {
     return say("I don't know your usual for today yet. Pick a few spots on this day of the week and I'll learn it.", { chips: moodChips() });
   }
   // "I'll drive", "I have 2 hrs", "somewhere closer": change the last plan instead of starting over.
+  // A new time or way of getting there keeps the place on screen if it still works ("somewhere closer" doesn't).
   const tweakOnly = !intent.mood && !intent.kind && !intent.focus && !intent.activity && !intent.environment;
   if (intent.planning && tweakOnly && chat.plan) {
     const prev = chat.plan.intent;
+    const shown = chat.options[chat.index];
     return planAndSuggest({
       ...prev,
       freeMin: intent.freeMin || prev.freeMin,
       mode: intent.mode || prev.mode,
       close: intent.close || prev.close,
+    }, {
+      tweak: true,
+      keepPlace: !intent.close && shown ? shown.place : null,
+      keepMode: intent.mode || prev.mode || null, // a way there you named earlier still counts
+      closerThan: intent.close && shown ? shown : null,
     });
   }
   if (intent.planning || intent.focus) return planAndSuggest(intent);
@@ -366,6 +393,7 @@ async function planAndSuggest(intent, extra) {
 
 /** Run the search for a plan and suggest the best place. */
 async function suggest(plan) {
+  const before = { plan: chat.plan, results: chat.results, options: chat.options, index: chat.index };
   chat.pending = null;
   chat.plan = plan;
   const p = plan.prefs;
@@ -394,15 +422,53 @@ async function suggest(plan) {
     return say(err instanceof SearchError ? err.message : "Something went wrong while searching. Try again in a moment.");
   }
   typing.remove();
-  A.record('search', { prefs: results.prefs, start: results.start });
-  store.set(STORAGE_KEYS.prefs, p);
-  fillForm($('#plan-form'), p);
+  // The way there is only learned when you said it; the chat's default (driving) isn't a choice you made.
+  A.record('search', { prefs: { ...results.prefs, mode: plan.intent.mode || null }, start: results.start });
 
   chat.results = results;
   chat.sets.push(results);
   chat.options = rankOptions(results.fitting, plan);
+  if (plan.keepPlace) {
+    // Keep the place you were looking at if it still works with the new time or way there, checked with
+    // real route times. (The ranking above uses quick estimates, which can wrongly put another place first.)
+    const kept = await stillWorks(plan.keepPlace, results, plan.keepMode);
+    if (kept) {
+      chat.options = [kept, ...chat.options.filter((f) => f.place.id !== kept.place.id)];
+      plan.kept = true;
+    } else {
+      plan.dropped = plan.keepPlace.name;
+    }
+  }
+  if (plan.closerThan) {
+    // Nearer than the place on screen (straight-line distance from where you start), nearest first.
+    const shown = plan.closerThan;
+    const closer = chat.options
+      .filter((f) => f.place.id !== shown.place.id && f.travel.straightKm < shown.travel.straightKm - 0.05)
+      .sort((a, b) => a.travel.straightKm - b.travel.straightKm);
+    if (!closer.length) {
+      Object.assign(chat, before); // keep the current suggestion
+      return say(`${shown.place.name} is already the closest spot that fits right now.`,
+        { chips: [{ label: 'Something else', run: () => showOption(chat.index + 1) }] });
+    }
+    chat.options = closer;
+    plan.closer = true;
+  }
   if (!chat.options.length) return nothingFits(plan, results);
   return showOption(0);
+}
+
+/** The place as a suggestion for these results if a way of getting there (`mode`, if you named one)
+    still leaves time to stay, else null. Uses its entry in the results when it has one
+    (so its notes and walk-instead advice carry over). */
+async function stillWorks(place, results, mode = null) {
+  const ok = (await tripsByMode(place, results)).filter((t) => t.fit.verdict !== 'no' && (!mode || t.mode === mode));
+  if (!ok.length) return null;
+  const listed = results.fitting.find((f) => f.place.id === place.id);
+  if (listed) return listed;
+  // Not in the search's own list (its quick estimate ruled it out, but the real route fits): build an entry
+  // the map can show too, with the fastest way that works and its score for that way.
+  const best = ok.sort((a, b) => a.fit.travel.thereMin - b.fit.travel.thereMin)[0];
+  return { ...best.fit, mode: best.mode, scoring: scorePlace(best.fit, { ...results.prefs, mode: best.mode }, results.wx) };
 }
 
 /** Order the places that fit for this plan: a type you asked for, somewhere new, or close by. */
@@ -424,11 +490,42 @@ function rankOptions(fitting, plan) {
   return [...reorder(list.filter((f) => f.verdict === 'fits')), ...reorder(list.filter((f) => f.verdict !== 'fits'))];
 }
 
-/** "It's 14 min by car, and you'll have 46 min there." */
-function tripText(fit) {
-  const mode = CONFIG.MODES[fit.mode || chat.results.prefs.mode];
-  const short = fit.verdict === 'short' ? `, a bit less than the ${fmtDuration(fit.wantStayMin)} you wanted` : '';
-  return `It's ${fmtDuration(fit.travel.thereMin)} ${mode.by}, and you'll have ${fmtDuration(fit.onSiteMin)} there${short}.`;
+const MODE_ORDER = ['walking', 'transit', 'driving'];
+
+// Real travel times come from routing.js (shared with the map's place cards).
+const R = window.ReachRouting || { minutes: async () => null, withTravel: (est) => est };
+
+/** The trip to a place by each way of getting there: real route times where available,
+    checked against the same start, free time, opening hours and sunset as the search. */
+async function tripsByMode(place, results) {
+  const ctx = {
+    origin: results.origin, start: results.start, sun: results.sun,
+    freeMin: results.prefs.freeMin, wantStayMin: results.prefs.wantStayMin || 30,
+  };
+  return Promise.all(MODE_ORDER.map(async (mode) => {
+    const est = checkFit(place, { ...ctx, mode });
+    const real = await R.minutes(results.origin, place, mode);
+    return { mode, fit: real == null ? est : R.withTravel(est, real, results) };
+  }));
+}
+
+/** "Fastest is 6 min by car, with 1 hr 49 min there." (or a nudge when only one way leaves time).
+    Open-ended plans (no class to be back for, no time given) leave out the time there. */
+function tripText(trips, openEnded, mode = null) {
+  const ok = trips.filter((t) => t.fit.verdict !== 'no');
+  if (!ok.length) return '';
+  const named = mode && ok.find((t) => t.mode === mode);
+  if (named) {
+    // You said how you're getting there: lead with that.
+    const there = openEnded ? '' : `, with ${fmtDuration(named.fit.onSiteMin)} there`;
+    return `${capitalize(CONFIG.MODES[mode].by)} it's ${named.fit.routed ? '' : 'about '}${fmtDuration(named.fit.travel.thereMin)}${there}. Other ways to get there:`;
+  }
+  const fastest = ok.slice().sort((a, b) => a.fit.travel.thereMin - b.fit.travel.thereMin)[0];
+  const by = CONFIG.MODES[fastest.mode].by;
+  const about = fastest.fit.routed ? '' : 'about ';
+  const there = openEnded ? '' : `, with ${fmtDuration(fastest.fit.onSiteMin)} there`;
+  const choose = ok.length > 1 ? ' Pick how you want to get there:' : ` Only ${by} gets you there in time:`;
+  return `Fastest is ${about}${fmtDuration(fastest.fit.travel.thereMin)} ${by}${there}.${choose}`;
 }
 
 /** Why this place: your history, your taste, or something new. */
@@ -451,8 +548,8 @@ function whyText(fit, plan) {
   return `I'd go to ${name}.`;
 }
 
-/** Show suggestion i, with the reasons and a place card. */
-function showOption(i) {
+/** Show suggestion i, with the reasons and a place card (with real travel times by each mode). */
+async function showOption(i) {
   const { options, plan, results } = chat;
   if (i >= options.length) {
     return say("That's everything that fits right now. Want to change something? More time or a different way to get there opens up more places.",
@@ -462,8 +559,19 @@ function showOption(i) {
   const fit = options[i];
   const intro = []; // how you're doing and how much time you have
   const lines = []; // where to go
-  if (i === 0) {
-    if (plan.intent.mood) intro.push(plan.intent.mood.say);
+  if (i === 0 && plan.kept) {
+    // You changed the time or the way there, and this place still works: say so instead of starting over.
+    const time = plan.intent.freeMin ? `With ${fmtDuration(plan.freeMin)}` : 'Good news';
+    const by = plan.keepMode ? ` ${CONFIG.MODES[plan.keepMode].by}` : '';
+    lines.push(`${time}, ${fit.place.name} still works${by}.`);
+  } else if (i === 0 && plan.closer) {
+    lines.push(`${fit.place.name} is closer.`);
+  } else if (i === 0) {
+    if (plan.dropped) {
+      const by = plan.keepMode ? ` ${CONFIG.MODES[plan.keepMode].by}` : '';
+      const time = plan.intent.freeMin ? ` in ${fmtDuration(plan.freeMin)}` : '';
+      intro.push(`${plan.dropped} doesn't work${by}${time}, so here's another spot.`);
+    } else if (plan.intent.mood && !plan.tweak) intro.push(plan.intent.mood.say);
     else if (plan.type === 'cafe' && !plan.typeMissing) intro.push('Coffee it is.');
     if (!plan.intent.mood && plan.prefs.kind === 'study') {
       const test = soonTest();
@@ -471,7 +579,7 @@ function showOption(i) {
     }
     const s = scheduleStatus();
     if (plan.note && plan.note !== 'usual') intro.push(plan.note);
-    else if (plan.prefs.when === 'later' && s.current) intro.push(`Once ${s.current.name} ends, you'll have ${fmtDuration(plan.freeMin)}.`);
+    else if (plan.prefs.when === 'later' && s.current && !plan.prefs.openEnded) intro.push(`Once ${s.current.name} ends, you'll have ${fmtDuration(plan.freeMin)}.`);
     else if (s.next && !plan.intent.freeMin) intro.push(`You've got ${fmtDuration(plan.freeMin)} before ${s.next.name}, so this gets you back in time.`);
     if (plan.typeMissing) intro.push(`I couldn't find ${A.TYPE_PLURALS[plan.type]} that fit, so here's the best study spot instead.`);
     lines.push(whyText(fit, plan));
@@ -480,12 +588,15 @@ function showOption(i) {
     const env = plan.prefs.environment;
     if (plan.envFrom === 'liked' && fit.place.environment.includes(env)) lines.push(`It's ${LIKE_SHORT[env]} too, the way you like it.`);
   }
-  lines.push(tripText(fit));
+  const typing = showTyping();
+  const trips = await tripsByMode(fit.place, results);
+  typing.remove();
+  lines.push(tripText(trips, plan.prefs.openEnded, plan.intent.mode));
   fit.notes.forEach((n) => lines.push(`${n}.`));
   const wx = results.wx;
   if (wx.available && (wx.flags.rain || wx.flags.storm) && !isStudyPlace(fit.place)) lines.push('Heads up: rain is likely, so bring a jacket.');
   $$('#ask-log [data-ask-next]').forEach((b) => b.remove()); // only the newest card offers "Something else"
-  return say([intro.join(' '), lines.join(' ')], { card: fit });
+  return say([intro.join(' '), lines.join(' ')], { card: fit, trips });
 }
 
 function nothingFits(plan, results) {
@@ -505,7 +616,7 @@ function nothingFits(plan, results) {
    --------------------------------------------------------------------- */
 const CHAT_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg>';
 const SEND_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
-const LEAF_MARK = '<svg class="brand-mark ask-avatar" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30"/><path class="leaf" d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z"/><path class="vein" d="M20 44l14-14"/></svg>';
+const LEAF_MARK = '<img class="brand-mark ask-avatar" src="logo-mark.png" alt="" width="36" height="36">'; // Reach's logo
 
 function buildChat() {
   document.body.insertAdjacentHTML('beforeend', `
@@ -564,9 +675,9 @@ async function send(text, run) {
 }
 
 /** A bot message (a string, or an array of paragraphs), with optional quick replies and a place card. */
-function say(text, { chips = [], card = null } = {}) {
+function say(text, { chips = [], card = null, trips = null } = {}) {
   const paras = [].concat(text).filter(Boolean).map((t) => `<p>${esc(t)}</p>`).join('');
-  addBubble('bot', `${paras}${card ? cardHTML(card) : ''}`);
+  addBubble('bot', `${paras}${card ? cardHTML(card, trips) : ''}`);
   setChips(chips);
 }
 
@@ -588,17 +699,49 @@ function setChips(chips) {
   $('#ask-chips').innerHTML = chips.map((c, i) => `<button type="button" class="ask-chip" data-chip="${i}">${esc(c.label)}</button>`).join('');
 }
 
-function cardHTML(fit) {
+const MODE_ICONS = {
+  walking: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M10 21l2-6 3 3v3M8 12l3-4 4 2 2 3M11 8l-1 5"/></svg>',
+  transit: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M8 21l1.5-4M16 21l-1.5-4"/><circle cx="8.5" cy="14" r=".6" fill="currentColor"/><circle cx="15.5" cy="14" r=".6" fill="currentColor"/></svg>',
+  driving: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16V11l2-5h10l2 5v5M3 16h18v3H3zM5 11h14"/><circle cx="7.5" cy="13.5" r=".6" fill="currentColor"/><circle cx="16.5" cy="13.5" r=".6" fill="currentColor"/></svg>',
+};
+
+/** Why a way of getting there doesn't work: closed, closes first, or no time left to stay. */
+function offText(fit, openEnded) {
+  if (/^Closed on/.test(fit.reason)) return 'closed today';
+  if (fit.arrive >= fit.hardStop) return fit.stopReason === 'sunset' ? "dark by the time you'd arrive" : "closes before you'd arrive";
+  return openEnded ? 'too far for today' : 'no time to stay';
+}
+
+/** One row per way of getting there; each that leaves time to stay opens directions for that mode. */
+function modesHTML(place, trips, origin, openEnded) {
+  const usual = usualMode(isStudyPlace(place) ? 'study' : 'parks');
+  const rows = trips.map(({ mode, fit }) => {
+    const m = CONFIG.MODES[mode];
+    const travel = `${fit.routed ? '' : '~'}${fmtDuration(fit.travel.thereMin)}`; // "~" = estimate (routing unavailable)
+    const tag = mode === usual ? '<span class="ask-mode-tag">Your usual</span>' : '';
+    if (fit.verdict === 'no') {
+      return `<div class="ask-mode is-off">${MODE_ICONS[mode]}<span class="ask-mode-name">${esc(m.label)}</span>
+          <span class="ask-mode-time">${esc(travel)}</span><span class="ask-mode-stay">${esc(offText(fit, openEnded))}</span></div>`;
+    }
+    const stay = openEnded ? '' : `${fmtDuration(fit.onSiteMin)} there`;
+    return `<a class="ask-mode${fit.verdict === 'short' && !openEnded ? ' is-short' : ''}" href="${esc(directionsUrl(place, mode, origin))}" target="_blank" rel="noopener"
+        data-ask-go="${esc(place.id)}" data-ask-mode="${esc(mode)}" data-ask-min="${fit.travel.thereMin}"
+        aria-label="${esc(`${m.label}: ${travel} to get there${stay ? `, ${stay}` : ''}. Opens directions.`)}">
+        ${MODE_ICONS[mode]}<span class="ask-mode-name">${esc(m.label)}${tag}</span>
+        <span class="ask-mode-time">${esc(travel)}</span>${stay ? `<span class="ask-mode-stay">${esc(stay)}</span>` : ''}</a>`;
+  }).join('');
+  return `${rows}<p class="ask-modes-note">Transit times are approximate. Check the schedule before you go.</p>`;
+}
+
+function cardHTML(fit, trips) {
   const { place } = fit;
-  const modeKey = fit.mode || chat.results.prefs.mode;
-  const mode = CONFIG.MODES[modeKey];
-  const meta = [place.kindLabel || TYPE_LABELS[place.type] || place.type, `${fmtDuration(fit.travel.thereMin)} ${mode.by}`, `${fmtDuration(fit.onSiteMin)} there`];
+  const results = chat.results;
+  const meta = [place.kindLabel || TYPE_LABELS[place.type] || place.type, `${kmToMi(fit.travel.straightKm).toFixed(1)} mi away`];
   return `<div class="ask-place">
       <p class="ask-place-name">${esc(place.name)}</p>
       <p class="ask-place-meta">${esc(meta.join(' · '))}</p>
       <div class="ask-place-actions" data-set="${chat.sets.length - 1}">
-        <a class="btn btn-small btn-primary" href="${esc(directionsUrl(place, modeKey, chat.results.origin))}" target="_blank" rel="noopener"
-           data-ask-go="${esc(place.id)}" data-ask-mode="${esc(modeKey)}">Directions</a>
+        <div class="ask-modes">${modesHTML(place, trips, results.origin, Boolean(results.prefs.openEnded))}</div>
         <button type="button" class="btn btn-small" data-ask-map="${esc(place.id)}">Show on map</button>
         <button type="button" class="btn btn-small" data-ask-next>Something else</button>
       </div>
@@ -611,20 +754,26 @@ function onCardClick(e) {
   const go = e.target.closest('[data-ask-go]');
   if (go && set) {
     // Opening directions is the strongest sign of what you like.
-    const fit = set.fitting.find((f) => f.place.id === go.dataset.askGo);
-    const current = state.results;
-    state.results = set;
-    A.recordChoice('go', go.dataset.askGo, go.dataset.askMode);
-    state.results = current;
-    if (fit) showToast(`Have fun at ${fit.place.name}!`);
+    // Recorded with the way you picked, so Reach learns how you like to get places too.
+    const fit = set.fitting.find((f) => f.place.id === go.dataset.askGo)
+      || chat.options.find((f) => f.place.id === go.dataset.askGo); // a kept place can be missing from the search's list
+    if (fit) {
+      A.record('go', { place: fit.place, prefs: { ...set.prefs, mode: go.dataset.askMode }, start: set.start, travelMin: Number(go.dataset.askMin) });
+      showToast(`Have fun at ${fit.place.name}!`);
+    }
     return;
   }
   const map = e.target.closest('[data-ask-map]');
   if (map && set) {
-    // Put this place first, then open the results map on it.
+    // Put this place first, then open the results map on it. A place kept after you changed the time can be
+    // missing from the search's list (see stillWorks), so add it from the chat's suggestions in that case.
     const r = set;
     const i = r.fitting.findIndex((f) => f.place.id === map.dataset.askMap);
     if (i > 0) r.fitting.unshift(...r.fitting.splice(i, 1));
+    else if (i < 0) {
+      const fit = chat.options.find((f) => f.place.id === map.dataset.askMap);
+      if (fit) r.fitting.unshift(fit);
+    }
     state.results = r;
     closeChat();
     if (location.hash === '#/results') route(); else location.hash = '#/results';

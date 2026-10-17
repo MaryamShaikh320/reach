@@ -155,6 +155,28 @@ body.ask-open .ask-fab { display: none; }
 }
 .ask-place-actions .btn { min-height: 40px; padding: 0 12px; font-size: 0.85rem; }
 
+/* Ways to get there: one row per mode (walking, transit, driving). Rows are links to directions. */
+.ask-modes { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.ask-mode {
+  display: grid; grid-template-columns: 22px 1fr auto; grid-template-areas: "icon name time" "icon stay stay";
+  align-items: center; column-gap: 10px; row-gap: 0; padding: 8px 12px; min-height: 48px;
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); text-decoration: none; font-size: 0.88rem; line-height: 1.3;
+}
+.ask-mode svg { grid-area: icon; color: var(--primary); }
+.ask-mode-name { grid-area: name; font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ask-mode-time { grid-area: time; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ask-mode-stay { grid-area: stay; font-size: 0.8rem; color: var(--fits); }
+.ask-mode.is-short .ask-mode-stay { color: var(--tight); } /* less than the stay you'd want */
+a.ask-mode:hover, a.ask-mode:focus-visible { border-color: var(--primary); background: var(--primary-soft); }
+.ask-mode.is-off { opacity: 0.6; }
+.ask-mode.is-off .ask-mode-stay { color: var(--muted); }
+.ask-modes-note { margin: 0; font-size: 0.75rem; color: var(--muted); }
+.ask-mode-tag {
+  padding: 1px 7px; border-radius: 999px; background: var(--primary); color: var(--primary-ink);
+  font-size: 0.68rem; font-weight: 700;
+}
+
 /* "Reach is typing" */
 .ask-typing { display: inline-flex; gap: 5px; padding: 14px 16px; }
 .ask-typing span {
