@@ -4,7 +4,7 @@
    Weather and place-search requests are NOT cached here. app.js caches those itself. */
 const CACHE = 'greenescape-v15';
 const APP_FILES = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'destinations.json',
-  'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css'];
+  'leaflet.js', 'leaflet.css'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_FILES)).then(() => self.skipWaiting()));

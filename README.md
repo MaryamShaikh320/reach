@@ -54,7 +54,7 @@ python3 -m http.server 8000
 | `app.js` | All logic, in numbered sections. **Section 1 (`CONFIG`) holds every tunable number**; section 3b is the Geoapify live search |
 | `destinations.json` | Curated San Jose places + San Jose ZIP centroids (used offline) |
 | `sw.js` | Offline cache (network-first, so you always get fresh code while developing) |
-| `vendor/leaflet/` | [Leaflet](https://leafletjs.com) 1.9.4 map library, bundled locally (BSD-2 license, see its `LICENSE`). No build step, no CDN |
+| `leaflet.js`, `leaflet.css` | [Leaflet](https://leafletjs.com) 1.9.4 map library, bundled locally (BSD-2 license, see `LICENSE`). No build step, no CDN |
 
 ## Parks or study spots
 
