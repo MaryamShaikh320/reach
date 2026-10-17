@@ -3,9 +3,13 @@
 
    A public group chat for each place on the results map. Tap a pin, then
    "Chat" on its card, to join that place's room; everyone who opens the same
-   place lands in the same room. Chat only exists in the map view: a round
-   button there reopens your last room (with an unread count), and leaving
-   the map closes it. Backend: Supabase (Postgres + Realtime + Presence),
+   place lands in the same room. Chat only exists in the map view, where its
+   button sits next to Ask Reach's, beside the zoom buttons:
+     - not in a room: the button opens a list of the places on the map to pick from
+     - minimize: the chat shrinks back into the button, which then shows the
+       place's name and unread messages (you stay in the room)
+     - close (×): leaves the room
+   Leaving the map minimizes it. Backend: Supabase (Postgres + Realtime + Presence),
    with anonymous sign-in so nobody needs an account. Setup: README > Local Chat,
    and supabase/chat.sql for the database.
 
@@ -13,8 +17,9 @@
    (e.g. "place-guadalupe-river-park-1x2y3z"), and that's all the server sees.
 
    Sections: config · DOM · rooms · connection · messages · sending ·
-             moderation · panel state · map card button · init
-   Reuses from app.js: store, findPlace, hashString, mapCardHTML, esc, showToast.
+             moderation · screens · panel state · map card button · init
+   Reuses from app.js: store, state, findPlace, hashString, mapCardHTML, esc,
+   fmtDuration, CONFIG, TYPE_LABELS, showRecommendation, showToast.
    ===================================================================== */
 (() => {
   'use strict';
@@ -43,7 +48,7 @@
     room: validRoom(store.get(KEYS.room, null)), // rooms saved before per-place chat have no name: dropped
     name: store.get(KEYS.name, ''),
     messages: new Map(), // id -> message row
-    open: false, minimized: false,
+    open: false,
     unread: 0, online: 0,
     isMod: false, banned: false,
     lastSentAt: 0, sending: false,
@@ -54,7 +59,6 @@
   const ICONS = {
     chat: '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6a.5.5 0 0 1-.8-.4V16h0a2.5 2.5 0 0 1-1-2V5.5z"/><path d="M8 8.5h8M8 12h5"/></svg>',
     min: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>',
-    expand: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     more: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
     send: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/></svg>',
@@ -63,25 +67,26 @@
   const root = document.createElement('div');
   root.className = 'chat-root';
   root.innerHTML = `
-    <button type="button" class="chat-fab" id="chat-fab" aria-controls="chat-panel" aria-expanded="false" aria-label="Open Reach Local Chat" hidden>
+    <button type="button" class="chat-fab" id="chat-fab" aria-controls="chat-panel" aria-expanded="false" aria-label="Open Reach Local Chat">
       ${ICONS.chat}
+      <span class="chat-fab-label" id="chat-fab-label" hidden></span>
       <span class="chat-badge" id="chat-fab-badge" hidden></span>
     </button>
     <section class="chat-panel" id="chat-panel" role="dialog" aria-labelledby="chat-title" hidden>
       <header class="chat-head">
-        <button type="button" class="chat-head-main" id="chat-head-main" tabindex="-1">
+        <div class="chat-head-main">
           <span class="chat-title" id="chat-title">Reach Local Chat</span>
           <span class="chat-sub">
-            <span id="chat-room-name">Pick a place on the map</span>
+            <span id="chat-room-name">Choose a place</span>
             <span class="chat-online" id="chat-online" hidden><span class="chat-dot" aria-hidden="true"></span><span id="chat-online-count"></span></span>
           </span>
-        </button>
-        <span class="chat-badge chat-head-badge" id="chat-head-badge" hidden></span>
+        </div>
         <button type="button" class="chat-icon-btn" id="chat-menu-btn" aria-label="Chat options" aria-expanded="false" aria-controls="chat-menu">${ICONS.more}</button>
         <button type="button" class="chat-icon-btn" id="chat-min-btn" aria-label="Minimize chat">${ICONS.min}</button>
-        <button type="button" class="chat-icon-btn" id="chat-close-btn" aria-label="Close chat">${ICONS.close}</button>
+        <button type="button" class="chat-icon-btn" id="chat-close-btn" aria-label="Leave chat" title="Leave chat">${ICONS.close}</button>
       </header>
       <div class="chat-menu" id="chat-menu" role="menu" hidden>
+        <button type="button" role="menuitem" data-chat-action="places">Chat about another place</button>
         <button type="button" role="menuitem" data-chat-action="rename">Change my name</button>
         <button type="button" role="menuitem" data-chat-action="guidelines">Community guidelines</button>
         <button type="button" role="menuitem" data-chat-action="copy-id">Copy my chat ID</button>
@@ -93,17 +98,29 @@
       </div>
       <form class="chat-compose" id="chat-compose" novalidate hidden>
         <label for="chat-input" class="sr-only">Message</label>
-        <textarea id="chat-input" rows="1" maxlength="${CHAT.maxBody}" placeholder="Say hi…" autocomplete="off" enterkeyhint="send"></textarea>
+        <textarea id="chat-input" rows="1" maxlength="${CHAT.maxBody}" placeholder="Write a message…" autocomplete="off" enterkeyhint="send"></textarea>
         <button type="submit" class="chat-send" id="chat-send" aria-label="Send message">${ICONS.send}</button>
       </form>
       <p class="chat-error" id="chat-error" role="alert" hidden></p>
     </section>`;
   document.body.appendChild(root);
 
+  // One row for the floating buttons: Ask Reach's (moved in once assistant.js builds it) and this one,
+  // so the two can never overlap. Positioned in chat.css; the chat button only shows on the map.
+  const dock = document.createElement('div');
+  dock.className = 'fab-dock';
+  document.body.appendChild(dock);
+  dock.append(root.querySelector('#chat-fab'));
+  // assistant.js loads first, so its DOMContentLoaded handler (which builds #ask-fab) has already run.
+  document.addEventListener('DOMContentLoaded', () => {
+    const ask = document.getElementById('ask-fab');
+    if (ask) dock.prepend(ask);
+  });
+
   const $c = (sel) => root.querySelector(sel);
   const el = {
-    fab: $c('#chat-fab'), fabBadge: $c('#chat-fab-badge'), panel: $c('#chat-panel'),
-    headMain: $c('#chat-head-main'), headBadge: $c('#chat-head-badge'),
+    fab: dock.querySelector('#chat-fab'), fabLabel: dock.querySelector('#chat-fab-label'), fabBadge: dock.querySelector('#chat-fab-badge'),
+    panel: $c('#chat-panel'),
     roomName: $c('#chat-room-name'), online: $c('#chat-online'), onlineCount: $c('#chat-online-count'),
     menuBtn: $c('#chat-menu-btn'), menu: $c('#chat-menu'), minBtn: $c('#chat-min-btn'), closeBtn: $c('#chat-close-btn'),
     status: $c('#chat-status'), body: $c('#chat-body'), list: $c('#chat-list'), jump: $c('#chat-jump'),
@@ -329,7 +346,7 @@
   }
 
   /* ---------- Unread ---------- */
-  const isReading = () => chat.open && !chat.minimized && document.visibilityState === 'visible';
+  const isReading = () => chat.open && document.visibilityState === 'visible';
   const maxId = () => Math.max(0, ...chat.messages.keys());
 
   function markRead() {
@@ -351,10 +368,8 @@
   function renderBadges() {
     const n = chat.unread;
     const text = n > 99 ? '99+' : String(n);
-    for (const badge of [el.fabBadge, el.headBadge]) {
-      badge.hidden = n === 0;
-      badge.textContent = text;
-    }
+    el.fabBadge.hidden = n === 0;
+    el.fabBadge.textContent = text;
     const label = chat.room ? `Open ${chat.room.name} Chat` : 'Open Reach Local Chat';
     el.fab.setAttribute('aria-label', n ? `${label}, ${n} unread message${n === 1 ? '' : 's'}` : label);
   }
@@ -396,9 +411,13 @@
     return "Your message couldn't be sent. Please try again.";
   }
 
+  /** Grow the box with what you type, up to 120px; only then does it scroll. */
   function autoGrow() {
     el.input.style.height = 'auto';
-    el.input.style.height = `${Math.min(el.input.scrollHeight, 120)}px`;
+    const border = el.input.offsetHeight - el.input.clientHeight; // height includes the border, scrollHeight doesn't
+    const full = el.input.scrollHeight + border;
+    el.input.style.height = `${Math.min(full, 120)}px`;
+    el.input.style.overflowY = full > 120 ? 'auto' : 'hidden';
   }
 
   /* ---------- Reporting & moderation ---------- */
@@ -431,7 +450,7 @@
 
   /* ---------- Rendering: header, status, screens ---------- */
   function renderHeader() {
-    el.roomName.textContent = chat.room ? `${chat.room.name} Chat` : 'Pick a place on the map';
+    el.roomName.textContent = chat.room ? `${chat.room.name} Chat` : 'Choose a place';
     el.online.hidden = chat.status !== 'live' || !chat.online;
     el.onlineCount.textContent = `${chat.online} online`;
   }
@@ -448,7 +467,7 @@
   function showComposer(show) {
     el.compose.hidden = !show;
     el.body.hidden = !show;
-    el.menu.querySelectorAll('[data-chat-action="rename"], [data-chat-action="copy-id"]')
+    el.menu.querySelectorAll('[data-chat-action="places"], [data-chat-action="rename"], [data-chat-action="copy-id"]')
       .forEach((b) => { b.hidden = !show; });
   }
 
@@ -456,8 +475,8 @@
     const blocked = chat.banned || chat.status !== 'live';
     el.input.disabled = blocked;
     el.send.disabled = blocked || chat.sending;
-    el.input.placeholder = chat.banned ? 'You have been removed from Local Chat.'
-      : `Message ${chat.room ? chat.room.name : 'this chat'}…`;
+    // Short on purpose: the place's name is already in the header, and a long hint would wrap
+    el.input.placeholder = chat.banned ? 'You have been removed from Local Chat.' : 'Write a message…';
   }
 
   function showError(text) {
@@ -465,7 +484,7 @@
     el.error.textContent = text;
   }
 
-  /** Screens shown in place of the message list: setup needed, or join. */
+  /** Screens shown in place of the message list: setup needed, pick a place, or join. */
   function showScreen(node) {
     showComposer(false);
     el.status.hidden = true;
@@ -478,6 +497,51 @@
       h('h3', { text: 'Local Chat is almost ready' }),
       h('p', { text: "This site hasn't been connected to a chat server yet." }),
       h('p', { class: 'chat-fine', text: 'Site owner: add SUPABASE_URL and SUPABASE_ANON_KEY to config.js and run supabase/chat.sql (see README > Local Chat).' }));
+  }
+
+  /** Every place on the map, numbered like its pin, to pick which place's chat to join. */
+  function placesScreen() {
+    el.roomName.textContent = 'Choose a place';
+    const fitting = (state.results && state.results.fitting) || [];
+    const current = chat.room && chat.room.slug;
+    const search = h('input', { type: 'search', id: 'chat-place-search', placeholder: 'Search places', autocomplete: 'off', 'aria-label': 'Search places' });
+    const list = h('ol', { class: 'chat-places' }, fitting.map((fit, i) => {
+      const mode = CONFIG.MODES[fit.mode] || CONFIG.MODES[state.results.prefs.mode];
+      const room = roomForPlace(fit.place);
+      return h('li', { 'data-name': fit.place.name.toLowerCase() },
+        h('button', { type: 'button', class: room.slug === current ? 'is-current' : null, 'data-pick': String(i) },
+          h('span', { class: `chat-place-num${fit.verdict === 'short' ? ' is-short' : ''}`, 'aria-hidden': 'true', text: String(i + 1) }),
+          h('span', { class: 'chat-place-text' },
+            h('span', { class: 'chat-place-name', text: fit.place.name }),
+            h('span', { class: 'chat-place-meta', text: [
+              fit.place.kindLabel || TYPE_LABELS[fit.place.type] || fit.place.type, `${fmtDuration(fit.travel.thereMin)} ${mode ? mode.by : ''}`.trim(),
+              room.slug === current ? "You're in this chat" : '',
+            ].filter(Boolean).join(' · ') }))));
+    }));
+    const none = h('p', { class: 'chat-fine', hidden: true, text: 'No places match that.' });
+    const screen = h('div', { class: 'chat-screen chat-picker' },
+      h('h3', { text: 'Which place do you want to chat about?' }),
+      fitting.length
+        ? [h('p', { text: `Each place on the map has its own public chat. Pick one of these ${fitting.length}, or tap a pin and press Chat on its card.` }),
+          fitting.length > 6 ? search : null, list, none]
+        : h('p', { text: 'There are no places on the map right now. Change your plan to find some.' }));
+
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      list.querySelectorAll('li').forEach((li) => { li.hidden = q && !li.dataset.name.includes(q); if (!li.hidden) shown += 1; });
+      none.hidden = shown > 0;
+    });
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick]');
+      if (!btn) return;
+      const i = Number(btn.dataset.pick);
+      const fit = state.results.fitting[i];
+      if (!fit) return;
+      if (typeof showRecommendation === 'function') showRecommendation(i); // move the map and card to that place too
+      openPanel(roomForPlace(fit.place));
+    });
+    return screen;
   }
 
   /** First visit: pick a display name, then join `room`. */
@@ -527,45 +591,56 @@
     ].join('\n'));
   }
 
-  /* ---------- Panel state: open, minimize, close ---------- */
-  /** Open the panel on `room` (default: the last room you joined). */
+  /* ---------- Panel state: open, minimize, leave ---------- */
+  /** Open the panel on `room` (default: the room you're in). With no room, show the list of places. */
   function openPanel(room = chat.room) {
-    if (!room) return;
     document.dispatchEvent(new CustomEvent('reach:localchat-open')); // closes Ask Reach if it's open
     chat.open = true;
-    chat.minimized = false;
     renderPanel();
     if (!configured) showScreen(setupNeededScreen());
+    else if (!room) showScreen(placesScreen());
     else if (!chat.name) showScreen(joinScreen(room));
     else if (!chat.channel || !chat.room || chat.room.slug !== room.slug) { showScreen(null); connect(room); }
-    else { showScreen(null); showComposer(true); } // already in this room: just show it again
+    else { showScreen(null); showComposer(true); renderHeader(); } // already in this room: just show it again
     if (!el.body.hidden) { markRead(); scrollToBottom(); }
-    const focusTarget = root.querySelector('.chat-screen input') || (!el.input.disabled && !el.compose.hidden ? el.input : el.closeBtn);
+    const focusTarget = root.querySelector('.chat-screen input:not([hidden])') || root.querySelector('.chat-screen [data-pick]')
+      || (!el.input.disabled && !el.compose.hidden ? el.input : el.closeBtn);
     focusTarget.focus();
   }
 
-  function minimizePanel(min) {
-    chat.minimized = min;
-    renderPanel();
-    if (!min) { markRead(); scrollToBottom(); el.input.focus(); }
-  }
-
-  function closePanel({ focus = true } = {}) {
+  /** Shrink back into the button. You stay in the room; the button shows its name and unread count. */
+  function minimizePanel({ focus = true } = {}) {
     chat.open = false;
-    chat.minimized = false;
     toggleMenu(false);
     renderPanel();
     if (focus) el.fab.focus();
   }
 
+  /** Leave the room and close. The button goes back to opening the list of places. */
+  async function leaveRoom() {
+    const left = chat.room;
+    minimizePanel();
+    await disconnect();
+    chat.room = null;
+    store.set(KEYS.room, null);
+    chat.messages.clear();
+    el.list.replaceChildren();
+    chat.unread = 0;
+    setStatus('idle');
+    renderBadges();
+    renderPanel();
+    if (left) toast(`You left ${left.name} Chat`);
+  }
+
   function renderPanel() {
     el.panel.hidden = !chat.open;
-    el.panel.classList.toggle('is-min', chat.minimized);
-    el.fab.hidden = chat.open || !chat.room; // only once you've joined a room, to get back to it
+    el.fab.hidden = chat.open;
     el.fab.setAttribute('aria-expanded', String(chat.open));
-    el.headMain.tabIndex = chat.minimized ? 0 : -1;
-    el.minBtn.innerHTML = chat.minimized ? ICONS.expand : ICONS.min;
-    el.minBtn.setAttribute('aria-label', chat.minimized ? 'Expand chat' : 'Minimize chat');
+    el.fab.classList.toggle('has-room', Boolean(chat.room));
+    el.fabLabel.hidden = !chat.room;
+    el.fabLabel.textContent = chat.room ? chat.room.name : '';
+    el.fab.title = chat.room ? `${chat.room.name} Chat` : 'Chat about a place on the map';
+    renderBadges();
   }
 
   function toggleMenu(show = el.menu.hidden) {
@@ -576,6 +651,7 @@
   async function onMenuAction(action) {
     toggleMenu(false);
     if (action === 'guidelines') showGuidelines();
+    else if (action === 'places') { showScreen(placesScreen()); (root.querySelector('#chat-place-search') || root.querySelector('[data-pick]') || el.closeBtn).focus(); }
     else if (action === 'rename') {
       const next = window.prompt(`Your display name (${CHAT.nameMin}-${CHAT.nameMax} characters):`, chat.name);
       if (next === null) return;
@@ -592,9 +668,8 @@
 
   /* ---------- Events ---------- */
   el.fab.addEventListener('click', () => openPanel());
-  el.closeBtn.addEventListener('click', closePanel);
-  el.minBtn.addEventListener('click', () => minimizePanel(!chat.minimized));
-  el.headMain.addEventListener('click', () => { if (chat.minimized) minimizePanel(false); });
+  el.closeBtn.addEventListener('click', leaveRoom);
+  el.minBtn.addEventListener('click', () => minimizePanel());
   el.menuBtn.addEventListener('click', () => toggleMenu());
   el.menu.addEventListener('click', (e) => {
     const b = e.target.closest('[data-chat-action]');
@@ -616,13 +691,13 @@
   el.input.addEventListener('input', () => { autoGrow(); if (!el.error.hidden) showError(''); });
   el.panel.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!el.menu.hidden) { toggleMenu(false); el.menuBtn.focus(); } else closePanel();
+    if (!el.menu.hidden) { toggleMenu(false); el.menuBtn.focus(); } else minimizePanel();
   });
   document.addEventListener('click', (e) => {
     if (!el.menu.hidden && !e.target.closest('#chat-menu, #chat-menu-btn')) toggleMenu(false);
   });
   // Only one chat open at a time: Ask Reach (assistant.js) says when it opens.
-  document.addEventListener('reach:assistant-open', () => { if (chat.open) closePanel({ focus: false }); });
+  document.addEventListener('reach:assistant-open', () => { if (chat.open) minimizePanel({ focus: false }); });
   document.addEventListener('visibilitychange', () => { if (isReading()) markRead(); });
 
   /* ---------- Map card button & map-only behavior ---------- */
@@ -642,9 +717,9 @@
     if (place) openPanel(roomForPlace(place));
   });
 
-  // Chat lives on the map: close it when you leave the map view (app.js toggles body.map-mode).
+  // Chat lives on the map: minimize it when you leave the map view (app.js toggles body.map-mode).
   new MutationObserver(() => {
-    if (!document.body.classList.contains('map-mode') && chat.open) closePanel({ focus: false });
+    if (!document.body.classList.contains('map-mode') && chat.open) minimizePanel({ focus: false });
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
   /* ---------- Init ---------- */

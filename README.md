@@ -66,7 +66,8 @@ python3 -m http.server 8000
 **Reach Local Chat** is a public group chat for each place on the results map. There are no private messages, DMs or friend requests.
 
 - **Joining:** on the map, tap a pin, then **Chat** on its card (an icon-only button on phones). That opens the room for that place, like "San Jose Municipal Rose Garden Chat". Everyone who opens the same place joins the same room. The first time, you pick a display name.
-- **Map only:** chat isn't shown on other pages, and leaving the map closes it. Once you've joined a room, a round chat button on the map (next to the locate button) reopens it and shows unread messages.
+- **Or pick from a list:** the chat button in the map's bottom-right corner (beside the zoom buttons, next to Ask Reach) opens a list of every place on the map, numbered like the pins, with a search box. Picking one also moves the map to it.
+- **Minimize vs leave:** minimize (–) shrinks the chat back into its button. You stay in the room, and the button shows the place's name (on wide screens) and an unread count. Close (×) leaves the room, and the button goes back to opening the list. Leaving the map minimizes the chat; it isn't shown on other pages.
 - **Privacy:** no location is used. A room is named after the place you picked (for example `place-san-jose-municipal-rose-garden-1x2y3z`), and that's all the chat server sees.
 - **Real time:** new messages, removals and the "N online" count arrive instantly over Supabase Realtime. The last 100 messages load when you open a room, so history survives a refresh.
 - **Accounts:** none needed. Each browser gets an anonymous Supabase user ID, used to stop impersonation, rate-limit and ban.

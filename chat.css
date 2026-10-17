@@ -6,7 +6,8 @@
    Chat only exists in the map view (it's opened from a place card).
    ===================================================================== */
 
-body:not(.map-mode) .chat-root { display: none; }
+body:not(.map-mode) .chat-root,
+body:not(.map-mode) .chat-fab { display: none; }
 
 /* "Chat" button on the map card, next to Get directions and Save */
 .btn-chat svg { width: 20px; height: 20px; flex: none; }
@@ -16,31 +17,42 @@ body:not(.map-mode) .chat-root { display: none; }
   .btn-chat span { display: none; }
 }
 
-.chat-root {
-  /* Where the button (and the minimized bar) sits */
-  --chat-right: 16px;
-  --chat-bottom: calc(40px + env(safe-area-inset-bottom));
+/* ---------- Button dock ----------
+   Ask Reach's button and this one share one row (built in chat.js), so they can never overlap.
+   Off the map: bottom right, and only Ask Reach shows.
+   On the map: in the bottom-right corner, just left of the zoom buttons
+   (Leaflet puts them 10px from the edge, 34px wide, above the attribution line).
+   Phones on the map: stacked above the locate button (the zoom buttons are hidden there). */
+.fab-dock {
+  position: fixed; right: calc(16px + env(safe-area-inset-right)); bottom: calc(40px + env(safe-area-inset-bottom)); z-index: 50;
+  display: flex; align-items: center; gap: 10px;
+  pointer-events: none; /* only the buttons take clicks, not the gap between them */
 }
-/* Map view: sit just left of the locate button, clear of the zoom buttons */
-body.map-mode .chat-root { --chat-right: 66px; --chat-bottom: 112px; }
+.fab-dock > * { pointer-events: auto; }
+.fab-dock .ask-fab { position: static; }
+body.map-mode .fab-dock { right: 56px; bottom: 26px; }
 @media (max-width: 600px) {
-  /* Phones: zoom buttons are hidden, so stack above the locate button instead */
-  body.map-mode .chat-root { --chat-right: 12px; --chat-bottom: 96px; }
+  body.map-mode .fab-dock { right: 12px; bottom: 96px; flex-direction: column; align-items: flex-end; }
   /* The weather panel spans the screen on phones; step aside while it's open */
-  body.map-mode:has(#wx-panel:not([hidden])) .chat-fab { display: none; }
+  body.map-mode:has(#wx-panel:not([hidden])) .fab-dock { display: none; }
 }
-/* Ask Reach's window covers this corner while it's open */
-body.ask-open .chat-fab { display: none; }
+/* Each chat's open window covers this corner, so hide the other chat's button meanwhile */
+body.ask-open .chat-fab,
+body:has(#chat-panel:not([hidden])) .ask-fab { display: none; }
 
-/* ---------- Floating button ---------- */
+/* ---------- Floating button ----------
+   Round when you're not in a room; once you are (and the window is minimized) it also shows the place. */
 .chat-fab {
-  position: fixed; right: var(--chat-right); bottom: var(--chat-bottom); z-index: 50;
-  width: 56px; height: 56px; padding: 0; border-radius: 50%; border: 0;
-  display: grid; place-items: center; cursor: pointer;
-  background: var(--primary); color: var(--primary-ink);
+  position: relative; height: 56px; min-width: 56px; padding: 0 15px; border-radius: 999px; border: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+  background: var(--primary); color: var(--primary-ink); font: inherit; font-weight: 700; font-size: .95rem;
   box-shadow: 0 6px 20px rgba(20, 50, 34, .3), 0 2px 6px rgba(0, 0, 0, .15);
   transition: transform .15s, background-color .15s;
 }
+.chat-fab svg { flex: none; }
+.chat-fab-label { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Narrower screens: keep it round so it fits beside Ask Reach (the place name is in its tooltip and label) */
+@media (max-width: 899px) { .chat-fab-label { display: none; } }
 .chat-fab:hover { background: var(--primary-strong); transform: translateY(-2px); }
 .chat-fab:active { transform: scale(.95); }
 .chat-fab:focus-visible, .chat-panel :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -62,26 +74,17 @@ body.ask-open .chat-fab { display: none; }
 }
 @keyframes chat-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
 
-/* Minimized: only the header, in the button's spot */
-.chat-panel.is-min { height: auto; width: min(300px, calc(100vw - 32px)); right: var(--chat-right); bottom: var(--chat-bottom); }
-.chat-panel.is-min > :not(.chat-head) { display: none !important; }
-.chat-panel.is-min .chat-head { border-bottom: 0; }
-.chat-panel.is-min #chat-menu-btn { display: none; }
-
 .chat-head {
   display: flex; align-items: center; gap: 4px; padding: 10px 8px 10px 16px;
   background: var(--primary); color: var(--primary-ink);
 }
 .chat-head-main {
   flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: default;
 }
-.chat-panel.is-min .chat-head-main { cursor: pointer; }
 .chat-title { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; line-height: 1.2; }
 .chat-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: .8rem; opacity: .9; }
 .chat-online { display: inline-flex; align-items: center; gap: 5px; }
 .chat-dot { width: 8px; height: 8px; border-radius: 50%; background: #7ee2a1; box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
-.chat-head-badge { flex: none; }
 .chat-icon-btn {
   flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 999px;
   display: grid; place-items: center; background: transparent; color: inherit; cursor: pointer;
@@ -140,7 +143,10 @@ body.ask-open .chat-fab { display: none; }
   flex: 1; min-width: 0; min-height: 44px; max-height: 120px; resize: none; padding: 11px 14px;
   border: 1.5px solid var(--border); border-radius: 22px; background: var(--bg); color: var(--text);
   font: inherit; font-size: 16px; line-height: 1.3; /* 16px stops iOS zooming in */
+  overflow-y: hidden; /* chat.js turns scrolling on only once the text is taller than max-height */
 }
+/* The hint text stays on one line (ending in "…" if it's too long), so an empty box never scrolls */
+.chat-compose textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-compose textarea:focus { outline: none; border-color: var(--primary); }
 .chat-compose textarea:disabled { opacity: .6; }
 .chat-send {
@@ -164,11 +170,27 @@ body.ask-open .chat-fab { display: none; }
 .chat-screen .chat-error { padding: 0; }
 .chat-join-btn { width: 100%; margin-top: 4px; }
 .chat-screen .chat-fine { font-size: .8rem; }
+.chat-places { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-places button {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 52px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.chat-places button:hover { border-color: var(--primary); background: var(--primary-soft); }
+.chat-places button.is-current { border-color: var(--primary); }
+.chat-place-num {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--fits); color: var(--primary-ink); font-size: .8rem; font-weight: 700;
+}
+.chat-place-num.is-short { background: var(--tight); } /* yellow, like the pin of a place where you'd get less time */
+.chat-place-text { display: flex; flex-direction: column; min-width: 0; }
+.chat-place-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-screen .chat-place-meta { font-size: .8rem; color: var(--muted); }
 .chat-link { align-self: center; padding: 6px; border: 0; background: none; color: var(--primary); font: inherit; font-size: .88rem; font-weight: 700; text-decoration: underline; cursor: pointer; }
 
 /* ---------- Phones: panel becomes a bottom sheet ---------- */
 @media (max-width: 600px) {
-  .chat-panel:not(.is-min) {
+  .chat-panel {
     left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom));
     width: auto; height: min(640px, calc(100dvh - 80px));
   }

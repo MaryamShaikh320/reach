@@ -31,15 +31,7 @@
 .ask-fab:active { transform: scale(0.97); }
 body.ask-open .ask-fab { display: none; }
 
-/* Map view: stack above the map's bottom-right buttons (locate, zoom, Local Chat's button and its minimized bar) */
-body.map-mode .ask-fab { right: calc(10px + env(safe-area-inset-right)); bottom: 176px; }
-@media (max-width: 600px) {
-  body.map-mode .ask-fab { right: 12px; bottom: 168px; }
-  /* The weather panel spans the screen on phones; step aside while it's open */
-  body.map-mode:has(#wx-panel:not([hidden])) .ask-fab { display: none; }
-}
-/* Local Chat's open window covers this corner */
-body:has(#chat-panel:not([hidden]):not(.is-min)) .ask-fab { display: none; }
+/* Where the button sits (and on the map) is set by the button dock in chat.css, shared with Local Chat. */
 
 /* Panel: a bottom sheet on phones, a floating window on wider screens */
 .ask-panel {
