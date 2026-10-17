@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Reach share cover (og:image). Colors match the light theme tokens in styles.css. -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="0%" r="75%">
+      <stop offset="0" stop-color="#e4ecdc"/>
+      <stop offset="1" stop-color="#f3f0e6"/>
+    </radialGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dcebe6"/>
+      <stop offset="1" stop-color="#f6efdc"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Landscape panel on the right -->
+  <g transform="translate(640 60)">
+    <clipPath id="panel"><rect width="500" height="510" rx="36"/></clipPath>
+    <g clip-path="url(#panel)">
+      <rect width="500" height="510" fill="url(#sky)"/>
+      <circle cx="360" cy="120" r="46" fill="#f2c66d"/>
+      <path d="M0 300 L110 190 L190 250 L300 150 L400 240 L500 190 V510 H0Z" fill="#9cc3a6"/>
+      <path d="M0 360 Q140 300 280 350 T500 330 V510 H0Z" fill="#5f9a72"/>
+      <!-- path winding toward the hills -->
+      <path d="M230 510 C240 450 300 420 270 380 C255 360 300 350 320 345" fill="none" stroke="#d8c39a" stroke-width="22" stroke-linecap="round"/>
+      <!-- pond -->
+      <ellipse cx="110" cy="455" rx="90" ry="20" fill="#79b2c9"/>
+      <path d="M70 452 h34 M120 460 h26" stroke="#e8f4f7" stroke-width="4" stroke-linecap="round"/>
+      <!-- trees -->
+      <g fill="#2f6b4f">
+        <path d="M30 360 l20 -70 l20 70Z"/>
+        <path d="M400 345 l22 -80 l22 80Z"/>
+        <path d="M455 350 l18 -62 l18 62Z"/>
+      </g>
+      <g fill="#3f7d5a">
+        <path d="M70 365 l16 -54 l16 54Z"/>
+        <path d="M360 355 l16 -50 l16 50Z"/>
+      </g>
+      <rect x="183" y="322" width="7" height="34" fill="#6d4c34"/>
+      <circle cx="186" cy="308" r="28" fill="#2f6b4f"/>
+      <!-- map pin over the destination -->
+      <g transform="translate(320 250)">
+        <path d="M0 0 C-26 0 -38 20 -38 36 C-38 62 0 96 0 96 C0 96 38 62 38 36 C38 20 26 0 0 0Z" fill="#b9772f"/>
+        <circle cx="0" cy="36" r="13" fill="#fffdf8"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Logo mark -->
+  <g transform="translate(80 120)">
+    <circle cx="44" cy="44" r="44" fill="#2f6b4f"/>
+    <g transform="translate(-0.5 -0.5) scale(1.375)">
+      <path d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z" fill="#dcebe0"/>
+      <path d="M20 44l14-14" stroke="#2f6b4f" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Title + tagline -->
+  <text x="76" y="330" font-family="'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif" font-size="132" font-weight="700" fill="#1e2a21" letter-spacing="-2">Reach</text>
+  <text x="80" y="394" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="34" font-weight="700" fill="#2f6b4f">Less Searching. More Exploring.</text>
+  <text font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="25" fill="#5a665c">
+    <tspan x="80" y="456">Parks and study spots that fit</tspan>
+    <tspan x="80" y="490">the free time you have between classes.</tspan>
+  </text>
+</svg>

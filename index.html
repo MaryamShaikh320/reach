@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reach</title>
+  <meta name="description" content="Reach: find a park or study spot you can actually enjoy in the free time you have right now. Less Searching. More Exploring.">
+  <!-- Share preview (iMessage, Discord, Slack, social). Use absolute URLs once the site has a public address. -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Reach: Less Searching. More Exploring.">
+  <meta property="og:description" content="Parks and study spots that fit the free time you have between classes.">
+  <meta property="og:image" content="cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Reach logo and tagline next to a path winding through green hills to a map pin">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#2f6b4f" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121a15" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232f6b4f'/%3E%3Cpath d='M20 44c0-14 10-24 26-26-2 16-12 26-26 26z' fill='%23e8f3ea'/%3E%3Cpath d='M20 44l14-14' stroke='%232f6b4f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- ===== Header: brand, navigation, theme toggle ===== -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#/welcome" aria-label="Reach home">
+        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="30" />
+          <path class="leaf" d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z" />
+          <path class="vein" d="M20 44l14-14" />
+        </svg>
+        <span class="brand-text">
+          <span class="brand-name">Reach</span>
+          <span class="brand-tagline">Less Searching. More Exploring.</span>
+        </span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="#/schedule" data-nav="schedule">Schedule</a>
+        <a href="#/plan" data-nav="plan">Plan</a>
+        <a href="#/favorites" data-nav="favorites">Favorites <span class="fav-count" id="fav-count" hidden></span></a>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Color theme: auto">
+          <span aria-hidden="true" id="theme-icon"></span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+
+    <!-- ===== Welcome cover: shown on the first visit, and from the logo ===== -->
+    <section class="view cover" id="view-welcome" data-view="welcome" aria-labelledby="cover-title" hidden>
+      <div class="cover-text">
+        <svg class="cover-mark brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="30" />
+          <path class="leaf" d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z" />
+          <path class="vein" d="M20 44l14-14" />
+        </svg>
+        <h1 id="cover-title" class="cover-title">Reach</h1>
+        <p class="cover-tagline">Less Searching. More Exploring.</p>
+        <p class="cover-lede">Parks and study spots that fit the free time you have between classes. Tell us your window and we'll find somewhere you can get to, enjoy, and get back from on time.</p>
+        <div class="cover-actions">
+          <a class="btn btn-primary btn-big" href="#/plan">Get started</a>
+          <a class="btn btn-big" href="#/schedule">Add my class schedule</a>
+        </div>
+      </div>
+      <div class="cover-art">
+        <svg viewBox="0 0 500 510" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustration of a path winding through green hills to a map pin">
+          <circle class="art-sun" cx="360" cy="120" r="46"/>
+          <path class="art-far" d="M0 300 L110 190 L190 250 L300 150 L400 240 L500 190 V510 H0Z"/>
+          <path class="art-near" d="M0 360 Q140 300 280 350 T500 330 V510 H0Z"/>
+          <path class="art-path" style="stroke-width: 22px" d="M230 510 C240 450 300 420 270 380 C255 360 300 350 320 345"/>
+          <ellipse class="art-water" cx="110" cy="455" rx="90" ry="20"/>
+          <path class="art-ripple" style="stroke-width: 4px" d="M70 452 h34 M120 460 h26"/>
+          <path class="art-tree" d="M30 360 l20 -70 l20 70Z M400 345 l22 -80 l22 80Z M455 350 l18 -62 l18 62Z"/>
+          <path class="art-tree-2" d="M70 365 l16 -54 l16 54Z M360 355 l16 -50 l16 50Z"/>
+          <rect class="art-trunk" x="183" y="322" width="7" height="34"/>
+          <circle class="art-tree" cx="186" cy="308" r="28"/>
+          <g class="cover-pin" transform="translate(320 250)">
+            <path d="M0 0 C-26 0 -38 20 -38 36 C-38 62 0 96 0 96 C0 96 38 62 38 36 C38 20 26 0 0 0Z"/>
+            <circle cx="0" cy="36" r="13"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- ===== View 1: Plan (the input form) ===== -->
+    <section class="view" id="view-plan" data-view="plan" aria-labelledby="plan-title">
+      <div class="hero">
+        <p class="eyebrow">Free-time finder · Anywhere in the US</p>
+        <h1 id="plan-title">How much free time do you have?</h1>
+        <p class="lede">Tell us your window. We'll find parks or study spots you can actually get to, enjoy, and get back from in time.</p>
+      </div>
+
+      <!-- "Free until your next class" hint, filled from the class schedule (app.js) -->
+      <div class="schedule-hint" id="schedule-hint" hidden></div>
+
+      <form id="plan-form" class="plan-form" novalidate>
+        <!-- Step numbers come from a CSS counter, so hidden steps are skipped. -->
+        <!-- Looking for: parks or study spots. Chips are generated by app.js -->
+        <fieldset class="step">
+          <legend><span class="step-num" aria-hidden="true"></span> Looking for</legend>
+          <div class="chips" data-group="kind"></div>
+        </fieldset>
+
+        <!-- Time -->
+        <fieldset class="step">
+          <legend><span class="step-num" aria-hidden="true"></span> Available time</legend>
+          <div class="chips" data-group="time"></div>
+          <div class="custom-time" id="custom-time-wrap" data-reveal="custom" hidden>
+            <label for="custom-minutes">Custom minutes</label>
+            <input type="number" id="custom-minutes" name="customMinutes" inputmode="numeric" min="10" max="720" step="5" placeholder="e.g. 75">
+          </div>
+        </fieldset>
+
+        <!-- How long you want to stay (green = you get it, yellow = less) -->
+        <fieldset class="step">
+          <legend><span class="step-num" aria-hidden="true"></span> How long do you want to stay?</legend>
+          <div class="chips" data-group="stay"></div>
+          <div class="custom-time" data-reveal="stay-custom" hidden>
+            <label for="stay-custom">Custom minutes</label>
+            <input type="number" id="stay-custom" name="stayCustom" inputmode="numeric" min="5" max="600" step="5" placeholder="e.g. 45">
+          </div>
+        </fieldset>
+
+        <!-- 2. When -->
+        <fieldset class="step">
+          <legend><span class="step-num" aria-hidden="true"></span> Leaving</legend>
+          <div class="chips" data-group="when"></div>
+          <div class="custom-time" id="later-wrap" data-reveal="later" hidden>
+            <label for="later-time">Start time</label>
+            <input type="time" id="later-time" name="laterTime" step="300">
+          </div>
+        </fieldset>
+
+        <!-- Activity (parks only) -->
+        <fieldset class="step" data-parks-only>
+          <legend><span class="step-num" aria-hidden="true"></span> What do you feel like doing?</legend>
+          <div class="chips" data-group="activity"></div>
+        </fieldset>
+
+        <!-- 4. Transportation -->
+        <fieldset class="step">
+          <legend><span class="step-num" aria-hidden="true"></span> Getting there</legend>
+          <div class="chips" data-group="mode"></div>
+        </fieldset>
+
+        <!-- Environment (parks only) -->
+        <fieldset class="step" data-parks-only>
+          <legend><span class="step-num" aria-hidden="true"></span> Preferred environment</legend>
+          <div class="chips" data-group="environment"></div>
+        </fieldset>
+
+        <!-- 6. Starting point: device location first. The ZIP field only appears
+             if location is blocked or unavailable (see "Starting point" in app.js). -->
+        <fieldset class="step">
+          <legend><span class="step-num" aria-hidden="true"></span> Starting point</legend>
+          <p class="location-status" id="location-status" aria-live="polite">Finding your location…</p>
+          <div id="zip-wrap" hidden>
+            <label for="zip" class="zip-prompt" id="zip-prompt">Enter your ZIP code:</label>
+            <div class="zip-row">
+              <input type="text" id="zip" name="zip" inputmode="numeric" autocomplete="postal-code"
+                     maxlength="5" pattern="\d{5}" placeholder="e.g. 95112" aria-describedby="zip-error">
+              <span class="zip-label" id="zip-label" aria-live="polite"></span>
+            </div>
+          </div>
+          <p class="field-error" id="zip-error" role="alert" hidden></p>
+        </fieldset>
+
+        <p class="form-error" id="form-error" role="alert" hidden></p>
+
+        <button type="submit" class="btn btn-primary btn-big" id="submit-btn">
+          <span class="btn-label">Find my escape</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+    </section>
+
+    <!-- ===== View 2: Results, as a full-screen map =====
+         One recommendation at a time in the card on top; the back/next buttons step through them. -->
+    <section class="view view-map" id="view-results" data-view="results" aria-labelledby="results-title" hidden>
+      <h1 id="results-title" class="sr-only">Your escape options</h1>
+      <div class="map-stage">
+        <div id="map" class="map" aria-label="Map of recommended places"></div>
+        <div id="map-fallback" class="map-fallback" hidden>
+          <p>The map couldn't load. Use the arrow buttons to browse your recommendations.</p>
+        </div>
+
+        <!-- Top: the current recommendation -->
+        <div class="map-top">
+          <div id="map-card" class="map-card-slot" aria-live="polite"></div>
+        </div>
+
+        <!-- Left / right middle: back & next -->
+        <button type="button" class="map-nav map-prev" id="map-prev" aria-label="Previous recommendation">
+          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="map-nav map-next" id="map-next" aria-label="Next recommendation">
+          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+
+        <!-- Bottom right: back to my location -->
+        <button type="button" class="map-locate" id="map-locate" aria-label="Center the map on me" title="Center on me">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        </button>
+
+        <!-- Bottom: change plan + weather -->
+        <div class="map-bottom">
+          <button type="button" class="map-chip" id="change-plan-btn" aria-haspopup="dialog" aria-controls="plan-sheet">Change plan</button>
+          <button type="button" class="map-chip" id="wx-chip" aria-expanded="false" aria-controls="wx-panel"></button>
+        </div>
+        <div class="wx-panel" id="wx-panel" hidden></div>
+
+        <!-- "Change plan" bottom sheet: edit options without leaving the map -->
+        <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+        <section class="plan-sheet" id="plan-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+          <div class="sheet-handle" aria-hidden="true"></div>
+          <h2 class="sheet-title" id="sheet-title">Change your plan</h2>
+          <form id="sheet-form" class="sheet-form" novalidate>
+            <div class="sheet-body">
+              <fieldset class="sheet-group">
+                <legend>Looking for</legend>
+                <div class="chips" data-group="kind"></div>
+              </fieldset>
+              <fieldset class="sheet-group">
+                <legend>Available time</legend>
+                <div class="chips" data-group="time"></div>
+                <div class="custom-time" data-reveal="custom" hidden>
+                  <label for="sheet-custom-minutes">Custom minutes</label>
+                  <input type="number" id="sheet-custom-minutes" name="customMinutes" inputmode="numeric" min="10" max="720" step="5" placeholder="e.g. 75">
+                </div>
+              </fieldset>
+              <fieldset class="sheet-group">
+                <legend>How long do you want to stay?</legend>
+                <div class="chips" data-group="stay"></div>
+                <div class="custom-time" data-reveal="stay-custom" hidden>
+                  <label for="sheet-stay-custom">Custom minutes</label>
+                  <input type="number" id="sheet-stay-custom" name="stayCustom" inputmode="numeric" min="5" max="600" step="5" placeholder="e.g. 45">
+                </div>
+              </fieldset>
+              <fieldset class="sheet-group">
+                <legend>Leaving</legend>
+                <div class="chips" data-group="when"></div>
+                <div class="custom-time" data-reveal="later" hidden>
+                  <label for="sheet-later-time">Start time</label>
+                  <input type="time" id="sheet-later-time" name="laterTime" step="300">
+                </div>
+              </fieldset>
+              <fieldset class="sheet-group" data-parks-only>
+                <legend>What do you feel like doing?</legend>
+                <div class="chips" data-group="activity"></div>
+              </fieldset>
+              <fieldset class="sheet-group">
+                <legend>Getting there</legend>
+                <div class="chips" data-group="mode"></div>
+              </fieldset>
+              <fieldset class="sheet-group" data-parks-only>
+                <legend>Preferred environment</legend>
+                <div class="chips" data-group="environment"></div>
+              </fieldset>
+              <fieldset class="sheet-group">
+                <legend>Starting point</legend>
+                <p class="location-status ok" id="sheet-location" hidden></p>
+                <div id="sheet-zip-wrap" hidden>
+                  <label for="sheet-zip" class="zip-prompt">ZIP code:</label>
+                  <input type="text" id="sheet-zip" name="zip" inputmode="numeric" autocomplete="postal-code" maxlength="5" pattern="\d{5}" placeholder="e.g. 95112">
+                </div>
+              </fieldset>
+            </div>
+            <p class="form-error" id="sheet-error" role="alert" hidden></p>
+            <div class="sheet-actions">
+              <button type="button" class="btn" id="sheet-cancel">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="sheet-recalc">
+                <span class="btn-label">Recalculate plan</span>
+                <span class="spinner" aria-hidden="true"></span>
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===== View: Class schedule (saved on this device) ===== -->
+    <section class="view" id="view-schedule" data-view="schedule" aria-labelledby="schedule-title" hidden>
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">Your week</p>
+          <h1 id="schedule-title">Class schedule</h1>
+        </div>
+      </div>
+      <p class="schedule-now" id="schedule-now" aria-live="polite"></p>
+
+      <form id="class-form" class="step class-form" novalidate>
+        <h2 class="class-form-title" id="class-form-title">Add a class</h2>
+        <div class="class-field">
+          <label for="class-name">Class name</label>
+          <input type="text" id="class-name" name="name" maxlength="60" placeholder="e.g. CS 46A" autocomplete="off">
+        </div>
+        <div class="class-field">
+          <label for="class-room">Room / building <span class="optional">(optional)</span></label>
+          <input type="text" id="class-room" name="room" maxlength="60" placeholder="e.g. MacQuarrie Hall 222" autocomplete="off">
+        </div>
+        <fieldset class="class-field class-days">
+          <legend>Days</legend>
+          <div class="chips" id="class-days"></div>
+        </fieldset>
+        <!-- Time boxes format themselves: type 930 and get 9:30 AM (see "Smart time field" in app.js) -->
+        <div class="class-times">
+          <div class="class-field">
+            <label for="class-start">Starts</label>
+            <input type="text" id="class-start" name="start" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
+          </div>
+          <div class="class-field">
+            <label for="class-end">Ends</label>
+            <input type="text" id="class-end" name="end" inputmode="numeric" autocomplete="off" placeholder="e.g. 1045">
+          </div>
+        </div>
+        <p class="form-error" id="class-error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="class-submit">Add class</button>
+          <button type="button" class="btn" id="class-cancel" hidden>Cancel</button>
+        </div>
+      </form>
+
+      <!-- Tests, quizzes and exams for your classes -->
+      <section class="tests" aria-labelledby="tests-title">
+        <div class="section-head">
+          <h2 id="tests-title">Upcoming tests</h2>
+          <button type="button" class="btn btn-small" id="add-test-btn">Add test</button>
+        </div>
+
+        <form id="test-form" class="step class-form" novalidate hidden>
+          <h3 class="class-form-title" id="test-form-title">Add a test</h3>
+          <div class="class-field">
+            <label for="test-class">Class</label>
+            <select id="test-class" name="classId"></select>
+          </div>
+          <fieldset class="class-field class-days">
+            <legend>Type</legend>
+            <div class="chips" id="test-types"></div>
+          </fieldset>
+          <div class="class-times">
+            <div class="class-field">
+              <label for="test-date">Date</label>
+              <input type="date" id="test-date" name="date">
+            </div>
+            <div class="class-field">
+              <label for="test-time">Time <span class="optional">(optional)</span></label>
+              <input type="text" id="test-time" name="time" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
+            </div>
+          </div>
+          <div class="class-field">
+            <label for="test-note">What's on it <span class="optional">(optional)</span></label>
+            <input type="text" id="test-note" name="note" maxlength="80" placeholder="e.g. Chapters 1–4" autocomplete="off">
+          </div>
+          <p class="form-error" id="test-error" role="alert" hidden></p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="test-submit">Add test</button>
+            <button type="button" class="btn" id="test-cancel">Cancel</button>
+          </div>
+        </form>
+
+        <div id="tests-list"></div>
+      </section>
+
+      <div id="schedule-list" class="schedule-list"></div>
+    </section>
+
+    <!-- ===== View 3: Favorites ===== -->
+    <section class="view" id="view-favorites" data-view="favorites" aria-labelledby="fav-title" hidden>
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">Saved for later</p>
+          <h1 id="fav-title">Your favorite escapes</h1>
+        </div>
+      </div>
+      <!-- Spin the wheel: lets the app pick one of your favorites (built in app.js) -->
+      <div id="spin-section"></div>
+      <div id="favorites-list" class="card-grid"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>Sample data:</strong> curated San Jose picks are not yet verified. Double-check hours before you go.</p>
+    <p>Places from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, powered by <a href="https://www.geoapify.com/" target="_blank" rel="noopener">Geoapify</a>. Weather by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0).</p>
+    <p>Travel times, and details for places outside our curated list, are estimates.</p>
+  </footer>
+
+  <!-- Small toast for "Saved to favorites" feedback -->
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="vendor/leaflet/leaflet.js" defer></script>
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
