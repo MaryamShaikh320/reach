@@ -692,7 +692,7 @@ function buildChat() {
       <div class="ask-chips" id="ask-chips"></div>
       <form class="ask-form" id="ask-form" autocomplete="off">
         <label class="sr-only" for="ask-input">Message</label>
-        <input type="text" id="ask-input" maxlength="200" placeholder="How are you feeling?" enterkeyhint="send">
+        <textarea id="ask-input" rows="1" maxlength="300" placeholder="How are you feeling?" enterkeyhint="send"></textarea>
         <button type="submit" class="ask-send" aria-label="Send">${SEND_ICON}</button>
       </form>
     </section>`);
@@ -706,13 +706,28 @@ function buildChat() {
     const text = input.value.trim();
     if (!text || chat.busy) return;
     input.value = '';
+    autoGrow(input);
     send(text);
   });
+  // Like Local Chat: the box grows with what you type; Enter sends, Shift+Enter starts a new line.
+  $('#ask-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#ask-form').requestSubmit(); }
+  });
+  $('#ask-input').addEventListener('input', (e) => autoGrow(e.currentTarget));
   $('#ask-chips').addEventListener('click', (e) => {
     const chip = e.target.closest('[data-chip]');
     if (chip && !chat.busy) send(chip.textContent, chat.chipActions[Number(chip.dataset.chip)]);
   });
   $('#ask-log').addEventListener('click', onCardClick);
+}
+
+/** Grow the message box with its text, up to 120px; only then does it scroll (same as Local Chat). */
+function autoGrow(box) {
+  box.style.height = 'auto';
+  const border = box.offsetHeight - box.clientHeight; // height includes the border, scrollHeight doesn't
+  const full = box.scrollHeight + border;
+  box.style.height = `${Math.min(full, 120)}px`;
+  box.style.overflowY = full > 120 ? 'auto' : 'hidden';
 }
 
 /** Show your message, then run what it asks for (a chip's own action, or reading the text). */
