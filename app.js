@@ -1577,7 +1577,10 @@ function renderResults() {
     map.invalidateSize();
     drawMarkers(results);
   }
-  showRecommendation(0, { animate: false });
+  // Coming back with "Back to map": reopen the place you were looking at, not #1
+  const resume = MAP.resume && MAP.index < results.fitting.length ? MAP.index : 0;
+  MAP.resume = false;
+  showRecommendation(resume, { animate: false });
 }
 
 /* ---------------------------------------------------------------------
@@ -1586,7 +1589,7 @@ function renderResults() {
    shown in the card on top; the back/next buttons (or arrow keys, a swipe on the
    card, or tapping a pin) step through them in Escape Score order.
    --------------------------------------------------------------------- */
-const MAP = { map: null, tiles: null, layer: null, pins: [], index: 0, tileLoads: 0, tileErrors: 0, tileStep: 0 };
+const MAP = { map: null, tiles: null, layer: null, pins: [], index: 0, resume: false, tileLoads: 0, tileErrors: 0, tileStep: 0 };
 
 function isDarkTheme() {
   const forced = document.documentElement.getAttribute('data-theme');
@@ -1881,9 +1884,152 @@ function renderFavorites() {
     return;
   }
 
-  $('#favorites-list').innerHTML = favs.map(({ place, savedAt }) => `
+  const list = $('#favorites-list');
+  if (!favs.some((f) => f.place.id === FAV_TREE.selected)) FAV_TREE.selected = null;
+  FAV_TREE.picked.forEach((id) => { if (!favs.some((f) => f.place.id === id)) FAV_TREE.picked.delete(id); });
+  list.classList.toggle('is-selecting', FAV_TREE.selecting);
+  list.innerHTML = '<div class="fav-toolbar" id="fav-toolbar"></div>' + favTreeHTML(favs)
+    + '<div class="fav-detail" id="fav-detail" aria-live="polite"></div>';
+  renderFavToolbar(favs);
+  renderFavDetail(favs, mode, origin);
+  list.onclick = (e) => {
+    const act = e.target.closest('[data-fav-act]');
+    if (act) { onFavAction(act.dataset.favAct, favs); return; }
+    const leaf = e.target.closest('[data-fav-leaf]');
+    if (!leaf) return;
+    const id = leaf.dataset.favLeaf;
+    if (FAV_TREE.selecting) {
+      // Select mode: tap to mark places for removal
+      if (FAV_TREE.picked.has(id)) FAV_TREE.picked.delete(id); else FAV_TREE.picked.add(id);
+      $$('[data-fav-leaf]', list).forEach((b) => b.setAttribute('aria-pressed', String(FAV_TREE.picked.has(b.dataset.favLeaf))));
+      renderFavToolbar(favs);
+      return;
+    }
+    // Tap a bubble to raise it and show the place below the tree; tap it again to put it back.
+    FAV_TREE.selected = FAV_TREE.selected === id ? null : id;
+    $$('[data-fav-leaf]', list).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.favLeaf === FAV_TREE.selected)));
+    renderFavDetail(favs, mode, origin);
+    if (FAV_TREE.selected) $('#fav-detail').scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
+  };
+}
+
+/* --- Removing favorites: Select (pick several) and Remove all --- */
+function renderFavToolbar(favs) {
+  const n = FAV_TREE.picked.size;
+  $('#fav-toolbar').innerHTML = FAV_TREE.selecting
+    ? `<span class="fav-picked" aria-live="polite">${n ? `${n} selected` : 'Tap places to select them'}</span>
+       <button type="button" class="btn btn-small btn-danger" data-fav-act="remove-picked"${n ? '' : ' disabled'}>Remove selected</button>
+       <button type="button" class="btn btn-small" data-fav-act="cancel">Cancel</button>`
+    : `<button type="button" class="btn btn-small" data-fav-act="select">Select</button>
+       <button type="button" class="btn btn-small btn-danger" data-fav-act="remove-all">Remove all</button>`;
+  const hint = $('.fav-hint');
+  if (hint) hint.textContent = FAV_TREE.selecting ? 'Tap the places you want to remove.' : 'Tap one of your places to see it.';
+}
+
+function onFavAction(action, favs) {
+  if (action === 'select') {
+    FAV_TREE.selecting = true;
+    FAV_TREE.selected = null;
+    FAV_TREE.picked.clear();
+  } else if (action === 'cancel') {
+    FAV_TREE.selecting = false;
+    FAV_TREE.picked.clear();
+  } else if (action === 'remove-picked') {
+    removeFavorites([...FAV_TREE.picked]);
+    FAV_TREE.selecting = false;
+    FAV_TREE.picked.clear();
+  } else if (action === 'remove-all') {
+    const n = favs.length;
+    if (!window.confirm(`Remove all ${n} favorite${n === 1 ? '' : 's'}? This can't be undone.`)) return;
+    removeFavorites(favs.map((f) => f.place.id));
+  }
+  renderFavorites();
+}
+
+/** Remove several favorites at once (one save, one message). */
+function removeFavorites(ids) {
+  if (!ids.length) return;
+  const gone = new Set(ids);
+  if (!store.set(STORAGE_KEYS.favorites, getFavorites().filter((f) => !gone.has(f.id)))) {
+    showToast("Couldn't save. Your browser is blocking storage.");
+    return;
+  }
+  syncSaveButtons();
+  updateFavCount();
+  showToast(ids.length === 1 ? 'Removed 1 favorite' : `Removed ${ids.length} favorites`);
+}
+
+/* --- Favorites tree ---
+   Each favorite is a round bubble on a tree (most recent at the top), on its own branch.
+   Bubbles are buttons placed over an SVG tree by percentage, so branches and bubbles stay
+   lined up at any size. Spare spots get plain bubbles so the canopy is always full. */
+const FAV_TREE = {
+  // The tree, in a 1000 x 900 drawing: a curved trunk, wide at the roots and tapering up into the crown,
+  // with one branch off the right side ending in a point. Filled outlines worked out from smooth centerlines.
+  bark: [
+    'M571 875 L569 872 L566 870 L562 866 L558 863 L554 859 L550 855 L546 851 L542 847 L538 842 L536 838 L533 833 L531 829 L530 824 L528 820 L527 816 L526 812 L526 809 L525 805 L524 802 L524 799 L524 795 L523 791 L523 787 L523 783 L523 779 L523 774 L523 770 L524 765 L524 761 L524 756 L525 752 L525 748 L526 743 L527 739 L528 734 L529 729 L530 724 L531 719 L532 714 L533 709 L534 705 L535 700 L536 696 L537 692 L538 687 L539 682 L540 677 L542 672 L543 667 L543 661 L544 656 L545 651 L545 645 L546 640 L546 635 L546 630 L546 625 L546 620 L546 615 L546 610 L546 605 L545 599 L545 594 L544 589 L544 585 L543 581 L542 577 L542 573 L541 570 L541 567 L540 564 L540 561 L540 558 L539 555 L539 553 L539 550 L539 548 L538 546 L538 544 L538 543 L478 547 L478 549 L478 550 L478 552 L478 555 L478 557 L479 560 L479 563 L479 566 L479 569 L479 573 L479 577 L480 581 L480 585 L481 589 L481 593 L482 596 L482 600 L482 604 L482 607 L482 610 L482 614 L482 618 L481 621 L481 625 L480 629 L480 633 L479 637 L478 641 L477 645 L477 649 L476 652 L475 656 L474 660 L472 663 L471 667 L470 672 L468 676 L466 681 L465 686 L463 691 L462 696 L460 700 L459 705 L457 710 L455 715 L454 721 L452 726 L450 732 L449 738 L448 744 L446 749 L445 755 L444 761 L443 766 L443 772 L442 778 L441 783 L441 789 L440 795 L440 801 L440 807 L440 813 L441 819 L441 825 L442 830 L442 835 L442 839 L442 844 L442 848 L440 852 L439 857 L437 862 L434 867 L432 872 L429 878 L426 883 L423 886 L420 886 L418 886 L417 886 Z',
+    'M522 714 L524 712 L527 710 L530 707 L534 704 L538 700 L542 697 L546 693 L551 689 L555 685 L559 682 L563 678 L567 675 L571 672 L575 668 L580 665 L584 661 L588 657 L593 653 L597 649 L601 645 L605 641 L608 636 L612 631 L616 625 L619 620 L622 615 L625 610 L628 606 L630 603 L632 600 L630 602 L626 605 L623 608 L619 612 L614 616 L610 620 L605 624 L600 628 L596 632 L591 635 L587 638 L583 641 L578 643 L573 646 L569 649 L564 652 L559 654 L554 657 L550 660 L545 662 L540 665 L536 668 L531 670 L526 673 L521 676 L516 678 L512 681 L508 683 L505 685 L502 686 Z',
+  ],
+  // The canopy: a round crown of bubbles packed in offset rows (a dome that sits on the trunk), like leaves
+  // bunching together. Favorites fill it from the middle outward (newest first); spare spots get plain
+  // bubbles, so the crown is always full and round. [x, y, size]. The drawing is 1000 x 900.
+  // Wide screens: 17 bubbles in rows of 1, 4, 5, 4 and 3, just touching.
+  slots: [
+    [512, 330, 1], [437, 200, 1], [587, 200, 1], [437, 460, 1], [587, 460, 1], [362, 330, 1],
+    [662, 330, 1], [512, 75, 1], [287, 200, 1], [737, 200, 1], [212, 330, 1], [812, 330, 1],
+    [287, 460, 1], [737, 460, 1], [362, 590, 1], [662, 590, 1], [512, 590, 1],
+  ],
+  // Phones: 7 bigger bubbles in a round 2-3-2 crown, so names stay readable.
+  phoneSlots: [
+    [512, 405, 1], [395, 200, 1], [630, 200, 1], [277, 405, 1], [747, 405, 1], [395, 610, 1], [630, 610, 1],
+  ],
+  phone: () => Boolean(window.matchMedia && window.matchMedia('(max-width: 600px)').matches),
+  top: 0, height: 900, // the part of the drawing that's shown
+  selected: null,     // id of the bubble that's raised, with its details shown below
+  selecting: false,   // Select mode: tapping marks places for removal instead
+  picked: new Set(),  // ids marked in Select mode
+};
+
+/** Where a bubble sits, as percentages of the tree (drawing units: x 0-1000, y shown from FAV_TREE.top). */
+const placeStyle = (x, y, size) => `left:${x / 10}%;top:${((y - FAV_TREE.top) / FAV_TREE.height) * 100}%;--s:${size}`;
+
+function favTreeHTML(favs) {
+  const { bark } = FAV_TREE;
+  const slots = FAV_TREE.phone() ? FAV_TREE.phoneSlots : FAV_TREE.slots;
+  const onTree = favs.slice(0, slots.length);
+  // Spare spots in the canopy: plain bubbles (just foliage, not buttons)
+  const fillers = slots.slice(onTree.length).map(([x, y, size], k) => {
+    const i = onTree.length + k;
+    return `<span class="fav-leaf is-filler" aria-hidden="true" style="${placeStyle(x, y, size)}"></span>`;
+  }).join('');
+  const bubble = (f, i, extra = '') => {
+    const slot = slots[i];
+    const pos = slot ? ` style="${placeStyle(...slot)}"` : '';
+    return `<button type="button" class="fav-leaf${extra}"${pos}
+        data-fav-leaf="${esc(f.place.id)}" aria-pressed="${f.place.id === FAV_TREE.selected}"
+        aria-label="${esc(f.place.name)}: show details"><span class="fav-leaf-name">${esc(f.place.name)}</span></button>`;
+  };
+  const more = favs.slice(slots.length);
+  return `<div class="fav-tree" role="group" aria-label="Your favorite places, as bubbles on a tree">
+      <svg class="tree-art" viewBox="0 ${FAV_TREE.top} 1000 ${FAV_TREE.height}" aria-hidden="true">
+        <ellipse class="tree-ground" cx="495" cy="880" rx="230" ry="16"/>
+        ${bark.map((d) => `<path class="tree-trunk" d="${d}"/>`).join('')}
+      </svg>
+      ${fillers}
+      ${onTree.map((f, i) => bubble(f, i)).join('')}
+    </div>
+    ${more.length ? `<div class="fav-more"><p class="fav-more-title">More favorites</p>${more.map((f, i) => bubble(f, slots.length + i, ' is-chip')).join('')}</div>` : ''}
+    <p class="fav-hint">Tap one of your places to see it.</p>`;
+}
+
+/** The raised bubble's place, below the tree (same details and buttons as before: directions, remove). */
+function renderFavDetail(favs, mode, origin) {
+  const box = $('#fav-detail');
+  const f = favs.find((x) => x.place.id === FAV_TREE.selected);
+  if (!f) { box.innerHTML = ''; return; }
+  const { place, savedAt } = f;
+  box.innerHTML = `
     <article class="card fav-card">
-      <div class="card-media">${mediaHTML(place)}${sourceTagHTML(place)}</div>
       <div class="card-body">
         <p class="card-eyebrow">${esc(place.kindLabel || TYPE_LABELS[place.type] || place.type)} · saved ${esc(new Date(savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }))}</p>
         <h2 class="card-title">${esc(place.name)}</h2>
@@ -1896,7 +2042,7 @@ function renderFavorites() {
           <button type="button" class="btn btn-danger" data-remove="${esc(place.id)}">Remove</button>
         </div>
       </div>
-    </article>`).join('');
+    </article>`;
 }
 
 /* --- Spin the wheel (Favorites page) ---
@@ -2027,8 +2173,66 @@ function showSpinResult(place) {
       <p class="eyebrow">The wheel picked</p>
       <h3 class="spin-pick-name">${esc(place.name)}</h3>
       <p class="spin-pick-meta">${esc(place.kindLabel || TYPE_LABELS[place.type] || place.type)} · ${esc(hoursText(place))}</p>
-      <a class="btn btn-primary" href="${esc(directionsUrl(place, WHEEL.mode, WHEEL.origin))}" target="_blank" rel="noopener">Get directions</a>
+      <div class="spin-pick-actions">
+        <a class="btn btn-primary" href="${esc(directionsUrl(place, WHEEL.mode, WHEEL.origin))}" target="_blank" rel="noopener">Get directions</a>
+        <button type="button" class="btn" id="spin-map"><span class="btn-label">Show on map</span><span class="spinner" aria-hidden="true"></span></button>
+      </div>
     </div>`;
+  $('#spin-map').addEventListener('click', (e) => showPlaceOnMap(place, e.currentTarget));
+}
+
+/** Open the results map on one place (the wheel's pick): pin #1, with its card showing.
+    Uses this session's search if there is one, otherwise runs one from your location (or ZIP)
+    with your last plan. A place outside the plan still shows, with the reason as a note. */
+async function showPlaceOnMap(place, btn) {
+  const label = btn.querySelector('.btn-label');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  label.textContent = 'Opening map…';
+  try {
+    let results = state.results;
+    if (!results) {
+      const saved = { ...DEFAULT_PREFS, freeMin: 120, wantStayMin: 30, ...store.get(STORAGE_KEYS.prefs, {}) };
+      if (locationState.status === 'pending') await Promise.race([locationState.promise, new Promise((r) => setTimeout(r, 6000))]);
+      if (locationState.status === 'ok') saved.origin = 'location';
+      else if (/^\d{5}$/.test(saved.zip || '')) saved.origin = 'zip';
+      else {
+        showToast('Set your starting point on the Plan page first.');
+        location.hash = '#/plan';
+        return;
+      }
+      results = await runSearch(saved);
+    }
+    putPlaceFirst(results, place);
+    state.results = results;
+    if (location.hash === '#/results') route(); else location.hash = '#/results';
+  } catch (err) {
+    if (!(err instanceof SearchError)) console.error(err);
+    showToast(err instanceof SearchError ? err.message : "Couldn't open the map. Please try again.");
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    label.textContent = 'Show on map';
+  }
+}
+
+/** Move a place to the front of the results, adding it (fit-checked against the same plan) if it isn't there. */
+function putPlaceFirst(results, place) {
+  const i = results.fitting.findIndex((f) => f.place.id === place.id);
+  if (i >= 0) { results.fitting.unshift(...results.fitting.splice(i, 1)); return; }
+  indexPlaces([place]);
+  const ctx = {
+    origin: results.origin, mode: results.prefs.mode, activity: results.prefs.activity, freeMin: results.prefs.freeMin,
+    wantStayMin: results.prefs.wantStayMin || 30, start: results.start, sun: results.sun,
+  };
+  const fit = walkSwap(checkFit(place, ctx), ctx);
+  const missed = fit.verdict === 'no';
+  results.fitting.unshift({
+    ...fit,
+    verdict: missed ? 'short' : fit.verdict, // it's on the map because you asked for it, so show it rather than hide it
+    notes: missed ? [fit.reason.replace(/\.$/, ''), ...fit.notes] : fit.notes,
+    scoring: scorePlace(fit, { ...results.prefs, mode: fit.mode }, results.wx),
+  });
 }
 
 /* ---------------------------------------------------------------------
@@ -2063,14 +2267,31 @@ function fillForm(form, prefs) {
   renderChips(form, 'activity', toOptions(ACTIVITIES), p.activity);
   renderChips(form, 'mode', toOptions(CONFIG.MODES), p.mode);
   renderChips(form, 'environment', toOptions(ENVIRONMENTS), p.environment);
-  form.elements.customMinutes.value = p.customMinutes || '';
-  form.elements.stayCustom.value = p.stayCustom || '';
+  setHoursMins(form, 'custom', p.customMinutes);
+  setHoursMins(form, 'stay', p.stayCustom);
   form.elements.laterTime.value = p.laterTime || '';
   form.elements.zip.value = p.zip || '';
   syncReveals(form);
 }
 
-/** Show the custom-minutes / start-time inputs only when those chips are picked,
+/* Custom times are typed as hours + minutes (two boxes); plans still store total minutes. */
+/** Total minutes from a form's `<name>Hours` and `<name>Mins` boxes, or '' when both are empty. */
+function readHoursMins(form, name) {
+  const h = form.elements[`${name}Hours`].value.trim();
+  const m = form.elements[`${name}Mins`].value.trim();
+  if (!h && !m) return '';
+  return String(Number(h || 0) * 60 + Number(m || 0));
+}
+
+/** Fill a form's hour and minute boxes from total minutes (90 -> 1 hr 30 min). */
+function setHoursMins(form, name, minutes) {
+  const total = Number(minutes);
+  const has = minutes !== '' && minutes != null && Number.isFinite(total);
+  form.elements[`${name}Hours`].value = has && total >= 60 ? String(Math.floor(total / 60)) : '';
+  form.elements[`${name}Mins`].value = has && total % 60 ? String(total % 60) : (has && total < 60 ? '0' : '');
+}
+
+/** Show the custom time / start-time inputs only when those chips are picked,
     and hide the park-only questions (activity, environment) for study spots. */
 function syncReveals(form) {
   const study = form.elements.kind.value === 'study';
@@ -2116,24 +2337,24 @@ function readForm(form) {
   const f = form.elements;
   const raw = {
     kind: f.kind.value === 'study' ? 'study' : 'parks',
-    time: f.time.value, customMinutes: f.customMinutes.value.trim(),
-    stay: f.stay.value, stayCustom: f.stayCustom.value.trim(),
+    time: f.time.value, customMinutes: readHoursMins(form, 'custom'),
+    stay: f.stay.value, stayCustom: readHoursMins(form, 'stay'),
     when: f.when.value, laterTime: f.laterTime.value,
     activity: f.activity.value, mode: f.mode.value, environment: f.environment.value,
     zip: f.zip.value.trim(),
   };
   let freeMin = Number(raw.time);
   if (raw.time === 'custom') {
-    freeMin = Number(raw.customMinutes);
+    freeMin = raw.customMinutes === '' ? NaN : Number(raw.customMinutes);
     if (!Number.isFinite(freeMin) || freeMin < 10 || freeMin > 720) {
-      return { error: 'Enter a custom time between 10 and 720 minutes.', field: 'customMinutes' };
+      return { error: 'Enter a custom time between 10 min and 12 hr.', field: 'customHours' };
     }
   }
   let wantStayMin = Number(raw.stay);
   if (raw.stay === 'custom') {
-    wantStayMin = Number(raw.stayCustom);
+    wantStayMin = raw.stayCustom === '' ? NaN : Number(raw.stayCustom);
     if (!Number.isFinite(wantStayMin) || wantStayMin < 5 || wantStayMin > 600) {
-      return { error: 'Enter how long you want to stay, between 5 and 600 minutes.', field: 'stayCustom' };
+      return { error: 'Enter how long you want to stay, between 5 min and 10 hr.', field: 'stayHours' };
     }
   }
   raw.wantStayMin = Math.round(wantStayMin || 30);
@@ -2572,10 +2793,6 @@ function renderScheduleHint() {
   } else {
     rows.push(`<p>${scheduleStatusText(s)}</p>`);
   }
-  if (pick.test) {
-    const days = daysUntil(pick.test.date);
-    rows.push(`<p><strong>${esc(pick.test.type)}</strong> for ${esc(className(pick.test.classId))} ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}${pick.test.time ? ` at ${esc(fmtClock(pick.test.time))}` : ''}.</p>`);
-  }
   const tooShort = pick.freeMin < 15;
   const why = pick.study
     ? `A quiet study spot you can reach and leave in time${s.next || s.current ? ' for your next class' : ''}.`
@@ -2893,6 +3110,7 @@ async function route() {
 
   $$('.view').forEach((v) => { v.hidden = v.dataset.view !== view; });
   document.body.classList.toggle('map-mode', view === 'results'); // full-screen map, no footer
+  $('#back-to-map').hidden = view === 'results' || !state.results; // "Back to map" once there's a map to go back to
   if (view !== 'results' && isSheetOpen()) closePlanSheet();
   $$('[data-nav]').forEach((a) => {
     const active = a.dataset.nav === view || (view === 'results' && a.dataset.nav === 'plan');
@@ -2974,8 +3192,16 @@ function registerServiceWorker() {
   }
 }
 
+/* --- Back to map ---
+   Bottom-left button on the other pages, shown once you've searched. It reopens the results map
+   on the place you were looking at (MAP.index), without searching again. */
+function setupBackToMap() {
+  $('#back-to-map').addEventListener('click', () => { MAP.resume = true; });
+}
+
 async function init() {
   setupTheme();
+  setupBackToMap();
   setupDelegation();
   try {
     await loadData();
@@ -2995,6 +3221,8 @@ async function init() {
   setupSchedule();
   updateFavCount();
   window.addEventListener('hashchange', route);
+  // The favorites tree has a phone layout and a wide layout: redraw it when the screen crosses over.
+  if (window.matchMedia) window.matchMedia('(max-width: 600px)').addEventListener?.('change', () => { if (!$('#view-favorites').hidden) renderFavorites(); });
   await route();
   registerServiceWorker();
 }
