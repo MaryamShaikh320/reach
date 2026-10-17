@@ -1,0 +1,73 @@
+/* =====================================================================
+   Pattern agent styles (add-on). Load after styles.css:
+     <link rel="stylesheet" href="agent.css">
+   ===================================================================== */
+
+/* "For you" pill */
+.for-you-tag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+}
+
+/* Map card: why your pattern moved this place up */
+.for-you {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.link-btn {
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85em;
+  text-decoration: underline;
+  opacity: 0.75;
+  cursor: pointer;
+}
+.link-btn:hover,
+.link-btn:focus-visible { opacity: 1; }
+
+/* Plan page banner: "Your usual on Mondays is ..." */
+.agent-line { line-height: 1.45; }
+
+/* Schedule page: "Your usual spots" */
+.agent-panel { margin-top: 32px; }
+.agent-patterns {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-patterns li {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.agent-arrow { margin: 0 6px; opacity: 0.6; }
+.agent-count { opacity: 0.7; }
+.agent-meta { font-size: 0.88rem; color: var(--muted); }
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}

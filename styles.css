@@ -664,7 +664,8 @@ select { width: 100%; cursor: pointer; }
 .muted-note { margin: 0; color: var(--muted); }
 .test-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .test-item {
-  display: grid; grid-template-columns: 7.5em 1fr auto; align-items: center; gap: 4px 14px;
+  /* First column grows to fit "Thu, Oct 22 · 12:30 PM" (it doesn't wrap), so it can't run into the class name */
+  display: grid; grid-template-columns: minmax(7.5em, auto) 1fr auto; align-items: center; gap: 4px 14px;
   padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
 }
 .test-item.is-soon { border-color: var(--accent); background: var(--accent-soft); }

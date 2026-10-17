@@ -19,6 +19,9 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232f6b4f'/%3E%3Cpath d='M20 44c0-14 10-24 26-26-2 16-12 26-26 26z' fill='%23e8f3ea'/%3E%3Cpath d='M20 44l14-14' stroke='%232f6b4f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="leaflet.css">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="agent.css">
+  <link rel="stylesheet" href="assistant.css">
+  <link rel="stylesheet" href="chat.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -394,5 +397,11 @@
   <script src="leaflet.js" defer></script>
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
+  <!-- Ask Reach: pattern agent + the "how are you feeling?" assistant -->
+  <script src="agent.js" defer></script>
+  <script src="assistant.js" defer></script>
+  <!-- Reach Local Chat (Supabase client, bundled locally like Leaflet) -->
+  <script src="supabase.js" defer></script>
+  <script src="chat.js" defer></script>
 </body>
 </html>
