@@ -34,6 +34,8 @@ if (typeof runSearch !== 'function' || !window.ReachAgent) {
   return;
 }
 const A = window.ReachAgent;
+// Every-day places (food, malls, restrooms, ...) from places.js; parks and study spots come from app.js.
+const P = window.ReachPlaces || { CATEGORIES: {}, detect: () => null, search: null, typicalStay: () => 30 };
 
 /* ---------------------------------------------------------------------
    1. WHAT MESSAGES CAN MEAN
@@ -56,8 +58,8 @@ const MOODS = [
     say: "Let's shake things up with somewhere you haven't been.", plan: { kind: 'parks', activity: 'walking', environment: 'scenic' }, explore: true },
   { key: 'happy', re: /\b(happy|amazing|excited|celebrat\w*|awesome|fantastic|great day|good day|feeling (good|great))\b/,
     say: "Love that. Let's make the most of it.", plan: { kind: 'parks', activity: 'picnic', environment: 'scenic' } },
-  { key: 'hungry', re: /\b(hungry|starving|lunch|eat|food|snack)\b/,
-    say: 'Grab something on the way and have a picnic.', plan: { kind: 'parks', activity: 'picnic', environment: 'open field' } },
+  { key: 'hungry', re: /\b(hungry|starving|snack)\b/,
+    say: "Let's get you fed.", plan: { kind: 'parks', activity: 'picnic', environment: 'open field' } }, // food search, see understand()
 ];
 
 const FOCUS_WORDS = /\b(study|studying|focus|homework|hw|assignment|essay|exam|test|quiz|midterm|finals?|cram(ming)?|review|project|lab report|work on)\b/;
@@ -108,7 +110,7 @@ const LIKE_SHORT = {
 // Lower than the agent's own bar: these are simple habits, not a full prediction.
 const KNOWS = { setting: 1, mode: 0.5 };
 
-const MOOD_CHIPS = ['Stressed', 'Tired', 'Bored', 'Need to study', 'Want to move', 'Surprise me'];
+const MOOD_CHIPS = ['Stressed', 'Hungry', 'Need a restroom', 'Need to study', 'Bored', 'Surprise me'];
 
 /** "an hour and a half" -> 90, "45 min" -> 45, "2 hrs" -> 120. null if no time is mentioned. */
 function parseMinutes(t) {
@@ -132,8 +134,10 @@ function understand(text) {
   const focus = !mood || mood.key !== 'after-test' ? FOCUS_WORDS.test(t) : false;
   const minutes = parseMinutes(t);
   const zip = (t.match(/\b(\d{5})\b/) || [])[1] || null;
+  // An every-day place (food, mall, restroom, ...). "Hungry" means food, not a picnic.
+  const category = P.detect(t) || (mood && mood.key === 'hungry' && P.CATEGORIES.food ? 'food' : null);
   const intent = {
-    mood, focus, type, zip,
+    mood, focus, type, zip, category,
     freeMin: minutes ? clamp(minutes, 10, 720) : null,
     kind: type || focus ? 'study' : PARK_WORDS.test(t) ? 'parks' : null,
     // "I'll walk" names how you'll get there, so it isn't also read as wanting a walk
@@ -150,7 +154,7 @@ function understand(text) {
     help: /\b(help|what can you do|how does this work)\b/.test(t),
     usual: /\b(my usual|usually|normally)\b/.test(t),
   };
-  intent.planning = Boolean(intent.mood || intent.kind || intent.activity || intent.environment
+  intent.planning = Boolean(intent.mood || intent.kind || intent.category || intent.activity || intent.environment
     || intent.mode || intent.freeMin || intent.close);
   return intent;
 }
@@ -204,6 +208,7 @@ const stayFor = (freeMin, study) => Math.max(10, Math.min(study ? 90 : 30, Math.
 function makePlan(intent, extra = {}) {
   const s = scheduleStatus();
   const base = decideSpot(s); // the schedule's pick, adjusted to your usual for today (agent.js)
+  if (intent.category && P.search) return makeCategoryPlan(intent, extra, base);
   const mood = intent.mood;
   // Asking for a mood, an activity or a setting means a park; otherwise follow the schedule (a test -> study).
   const parkish = mood || intent.activity || intent.environment || intent.explore;
@@ -251,6 +256,40 @@ function makePlan(intent, extra = {}) {
     closerThan: extra.closerThan || null, // "somewhere closer": only places nearer than this one
     tweak: Boolean(extra.tweak),          // a follow-up to the last suggestion, not a fresh start
     tooShort: freeMin < 15,
+  };
+}
+
+/** A plan for an every-day place (food, restroom, mall, ...): time from your schedule or what you said,
+    a visit length for that kind of place, and how you said or usually get there. */
+function makeCategoryPlan(intent, extra, base) {
+  const key = intent.category;
+  const stay = P.typicalStay(key);
+  let freeMin = extra.freeMin || intent.freeMin || base.freeMin;
+  if (extra.before) freeMin = Math.min(freeMin, extra.before - nowMin() - 10);
+  const when = extra.when || (intent.freeMin ? 'now' : base.when);
+  const openEnded = !(intent.freeMin || extra.freeMin || extra.before) && Boolean(base.openEnded);
+  // No class to be back for: the window just has to fit the visit (a movie is longer than the default 2 hours)
+  if (openEnded) freeMin = Math.max(freeMin, stay + 60);
+  return {
+    prefs: {
+      ...DEFAULT_PREFS,
+      zip: chatZip(),
+      kind: key,
+      mode: intent.mode || usualMode(key) || 'driving',
+      time: 'custom', customMinutes: String(freeMin), freeMin,
+      stay: 'custom', stayCustom: String(stay), wantStayMin: stay,
+      when, laterTime: extra.laterTime || (when === 'later' ? base.laterTime : ''),
+      openEnded,
+    },
+    intent, category: key, envFrom: 'usual', freeMin,
+    close: intent.close,
+    note: extra.note || '',
+    keepPlace: extra.keepPlace || null,
+    keepMode: extra.keepMode || null,
+    closerThan: extra.closerThan || null,
+    tweak: Boolean(extra.tweak),
+    // Enough time for the shortest trip: a quick restroom stop needs far less than a meal
+    tooShort: freeMin < Math.max(8, Math.min(15, stay + 6)),
   };
 }
 
@@ -351,7 +390,7 @@ async function onMessage(text) {
   if (intent.deny && !intent.planning) return howAreYou();
   if (intent.next && chat.options.length && !intent.planning) return showOption(chat.index + 1);
   if (intent.help) {
-    return say("Tell me how you're feeling or what you want to do, like \"stressed\", \"need coffee\", \"somewhere quiet by the water\" or \"I have 30 min\". I'll check your schedule, tests and the places you usually like, and pick somewhere that fits.", { chips: moodChips() });
+    return say("Tell me how you're feeling or what you need, like \"stressed\", \"I'm hungry\", \"need a restroom\", \"find a mall\", \"somewhere quiet by the water\" or \"I have 30 min\". I can also find pharmacies, gyms, museums, movies, bookstores, dessert, groceries, ATMs, gas and water fountains. I'll check your schedule and the time you have, and pick somewhere that fits.", { chips: moodChips() });
   }
   if (intent.usual && !intent.planning) {
     const pick = decideSpot();
@@ -365,7 +404,7 @@ async function onMessage(text) {
   }
   // "I'll drive", "I have 2 hrs", "somewhere closer": change the last plan instead of starting over.
   // A new time or way of getting there keeps the place on screen if it still works ("somewhere closer" doesn't).
-  const tweakOnly = !intent.mood && !intent.kind && !intent.focus && !intent.activity && !intent.environment;
+  const tweakOnly = !intent.mood && !intent.kind && !intent.category && !intent.focus && !intent.activity && !intent.environment;
   if (intent.planning && tweakOnly && chat.plan) {
     const prev = chat.plan.intent;
     const shown = chat.options[chat.index];
@@ -415,7 +454,7 @@ async function suggest(plan) {
   const typing = showTyping();
   let results;
   try {
-    [results] = await Promise.all([runSearch(p), wait(500)]);
+    [results] = await Promise.all([plan.category ? P.search(p, plan.category) : runSearch(p), wait(500)]);
   } catch (err) {
     typing.remove();
     if (!(err instanceof SearchError)) console.error(err);
@@ -500,7 +539,7 @@ const R = window.ReachRouting || { minutes: async () => null, withTravel: (est) 
 async function tripsByMode(place, results) {
   const ctx = {
     origin: results.origin, start: results.start, sun: results.sun,
-    freeMin: results.prefs.freeMin, wantStayMin: results.prefs.wantStayMin || 30,
+    freeMin: results.prefs.freeMin, wantStayMin: place.stayMin || results.prefs.wantStayMin || 30,
   };
   return Promise.all(MODE_ORDER.map(async (mode) => {
     const est = checkFit(place, { ...ctx, mode });
@@ -532,6 +571,13 @@ function tripText(trips, openEnded, mode = null) {
 function whyText(fit, plan) {
   const { place } = fit;
   const name = place.name;
+  if (plan.category) {
+    const cat = P.CATEGORIES[plan.category];
+    // "Vietnamese restaurant" keeps its capital; generic labels read lowercase ("fast food place")
+    const label = plan.category !== 'food' ? cat.one
+      : ({ 'Fast food': 'fast food place', 'Food court': 'food court', Restaurant: 'restaurant' }[place.kindLabel] || place.kindLabel);
+    return `${name} is the closest ${label} that fits your time.`;
+  }
   const prof = A.profile(A.context());
   const been = prof.places[place.id];
   const env = plan.prefs.environment;
@@ -571,7 +617,8 @@ async function showOption(i) {
       const by = plan.keepMode ? ` ${CONFIG.MODES[plan.keepMode].by}` : '';
       const time = plan.intent.freeMin ? ` in ${fmtDuration(plan.freeMin)}` : '';
       intro.push(`${plan.dropped} doesn't work${by}${time}, so here's another spot.`);
-    } else if (plan.intent.mood && !plan.tweak) intro.push(plan.intent.mood.say);
+    } else if (plan.category && !plan.tweak) intro.push(P.CATEGORIES[plan.category].say);
+    else if (plan.intent.mood && !plan.tweak) intro.push(plan.intent.mood.say);
     else if (plan.type === 'cafe' && !plan.typeMissing) intro.push('Coffee it is.');
     if (!plan.intent.mood && plan.prefs.kind === 'study') {
       const test = soonTest();
@@ -594,7 +641,7 @@ async function showOption(i) {
   lines.push(tripText(trips, plan.prefs.openEnded, plan.intent.mode));
   fit.notes.forEach((n) => lines.push(`${n}.`));
   const wx = results.wx;
-  if (wx.available && (wx.flags.rain || wx.flags.storm) && !isStudyPlace(fit.place)) lines.push('Heads up: rain is likely, so bring a jacket.');
+  if (wx.available && (wx.flags.rain || wx.flags.storm) && fit.place.exposure !== 'indoor') lines.push('Heads up: rain is likely, so bring a jacket.');
   $$('#ask-log [data-ask-next]').forEach((b) => b.remove()); // only the newest card offers "Something else"
   return say([intro.join(' '), lines.join(' ')], { card: fit, trips });
 }
@@ -608,6 +655,13 @@ function nothingFits(plan, results) {
   const by = CONFIG.MODES[plan.prefs.mode].by;
   const chips = [{ label: 'I have 2 hrs' }];
   if (plan.prefs.mode === 'walking') chips.push({ label: "I'll drive" });
+  if (plan.category) {
+    const cat = P.CATEGORIES[plan.category];
+    const found = results.live.count;
+    return say(found
+      ? `I found ${found} ${cat.plural} nearby, but none fit in ${fmtDuration(plan.freeMin)} ${by} (closed, or too far to get there and back). More time or a faster way to get there would help.`
+      : `I couldn't find any ${cat.plural} within reach ${by}. More time or a faster way to get there would widen the search.`, { chips });
+  }
   return say(`Nothing fits in ${fmtDuration(plan.freeMin)} ${by} right now. ${results.start > addMin(results.sun.sunset, -30) ? 'Most parks close around sunset. ' : ''}More time or a faster way to get there would open up more places.`, { chips });
 }
 

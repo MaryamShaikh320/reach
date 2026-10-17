@@ -375,7 +375,9 @@ function renderAgentPanel() {
   });
   const taste = [];
   const kindTop = topOf(kinds);
-  if (kindTop) taste.push(`${kindTop.key === 'study' ? 'Study spots' : 'Parks'} ${Math.round(kindTop.share * 100)}% of the time`);
+  const kindName = (k) => ({ study: 'Study spots', parks: 'Parks' }[k]
+    || (window.ReachPlaces && window.ReachPlaces.CATEGORIES[k] ? capitalize(window.ReachPlaces.CATEGORIES[k].plural) : 'Places'));
+  if (kindTop) taste.push(`${kindName(kindTop.key)} ${Math.round(kindTop.share * 100)}% of the time`);
   const modeTop = topOf(modes);
   if (modeTop && CONFIG.MODES[modeTop.key]) taste.push(`usually ${CONFIG.MODES[modeTop.key].by}`);
   const likes = Object.entries(env).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => ENVIRONMENTS[k].label.toLowerCase());

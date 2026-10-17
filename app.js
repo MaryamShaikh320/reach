@@ -137,6 +137,7 @@ const ACTIVITY_TIPS = {
 const KIND_OPTIONS = [
   { value: 'parks', label: 'Parks' },
   { value: 'study', label: 'Study spots' },
+  { value: 'food', label: 'Food' }, // restaurants, fast food, food courts (searched by places.js)
 ];
 
 // match = shown when it matches; miss = when it doesn't; has = used for "..., though it's quiet."
@@ -1238,6 +1239,11 @@ function walkSwap(fit, ctx) {
 }
 
 async function runSearch(formPrefs) {
+  // Food (and the other every-day places) are found by places.js: nearest places that are open and fit your time.
+  // The stay you chose decides which give you enough time.
+  if (window.ReachPlaces && window.ReachPlaces.CATEGORIES[formPrefs.kind]) {
+    return window.ReachPlaces.search({ ...formPrefs, honorStay: true }, formPrefs.kind);
+  }
   // "Study spots" always means: activity = studying, environment = quiet.
   const kind = formPrefs.kind === 'study' ? 'study' : 'parks';
   const prefs = kind === 'study' ? { ...formPrefs, kind, activity: 'studying', environment: 'quiet' } : { ...formPrefs, kind };
@@ -1535,7 +1541,8 @@ function renderWeatherChip(results) {
   if (mode.note) items.push(`<li class="wx-info">${esc(mode.label)} times are estimates (${esc(mode.note)}).</li>`);
   const stay = `Stay ${fmtDuration(prefs.wantStayMin || 30)}`;
   const travel = capitalize(mode.by); // "On foot", "By car", "By transit"
-  const planBits = prefs.kind === 'study' ? ['Study spots', stay, travel] : ['Parks', stay, travel, act.label, env.label];
+  const planBits = prefs.kindLabel ? [prefs.kindLabel, stay, travel] // food and other every-day places (places.js)
+    : prefs.kind === 'study' ? ['Study spots', stay, travel] : ['Parks', stay, travel, act.label, env.label];
   $('#wx-panel').innerHTML = `
     <p class="wx-plan">${esc(planBits.join(' · '))}<br>
       From ${esc(where)} · ${esc(fmtTime(start))} to ${esc(fmtTime(end))}</p>
@@ -1547,7 +1554,7 @@ function liveStatusHTML(results) {
   const { live, origin } = results;
   const miles = kmToMi(live.radiusKm).toFixed(live.radiusKm < 5 ? 1 : 0);
   const where = origin.source === 'location' ? 'you' : esc(origin.label || origin.zip);
-  const what = results.prefs.kind === 'study' ? 'libraries and cafes' : 'parks';
+  const what = results.prefs.kindPlural || (results.prefs.kind === 'study' ? 'libraries and cafes' : 'parks');
   const messages = {
     live: `Checked ${live.count} ${what} within ${miles} mi of ${where}.`,
     cache: `Checked ${live.count} ${what} within ${miles} mi of ${where}.`,
@@ -2292,10 +2299,10 @@ function setHoursMins(form, name, minutes) {
 }
 
 /** Show the custom time / start-time inputs only when those chips are picked,
-    and hide the park-only questions (activity, environment) for study spots. */
+    and hide the park-only questions (activity, environment) for study spots and food. */
 function syncReveals(form) {
-  const study = form.elements.kind.value === 'study';
-  form.querySelectorAll('[data-parks-only]').forEach((el) => { el.hidden = study; });
+  const notParks = form.elements.kind.value !== 'parks';
+  form.querySelectorAll('[data-parks-only]').forEach((el) => { el.hidden = notParks; });
   const time = form.elements.time.value;
   const when = form.elements.when.value;
   form.querySelector('[data-reveal="custom"]').hidden = time !== 'custom';
@@ -2336,7 +2343,7 @@ function setupForm() {
 function readForm(form) {
   const f = form.elements;
   const raw = {
-    kind: f.kind.value === 'study' ? 'study' : 'parks',
+    kind: ['study', 'food'].includes(f.kind.value) ? f.kind.value : 'parks',
     time: f.time.value, customMinutes: readHoursMins(form, 'custom'),
     stay: f.stay.value, stayCustom: readHoursMins(form, 'stay'),
     when: f.when.value, laterTime: f.laterTime.value,
