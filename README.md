@@ -229,4 +229,4 @@ Copy an entry in `destinations.json` and fill in every field. Allowed values:
 
 ## Out of scope (for now)
 
-Live route calculation, user accounts, community reviews, and AI-generated recommendations. Everything is rule-based and deterministic.
+Live route calculation, user accounts, community reviews, and AI-generated recommendations. Everything is rule-based and deterministic, timer that notifies you if the time spent there is over.
