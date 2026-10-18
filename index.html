@@ -5,11 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Reach</title>
   <meta name="description" content="Reach: find a park or study spot you can actually enjoy in the free time you have right now. Less Searching. More Exploring.">
+  <!-- Share preview (iMessage, Discord, Slack, social). Use absolute URLs once the site has a public address. -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Reach: Less Searching. More Exploring.">
+  <meta property="og:description" content="Parks and study spots that fit the free time you have between classes.">
+  <meta property="og:image" content="cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Reach logo and tagline next to a path winding through green hills to a map pin">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#2f6b4f" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#121a15" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232f6b4f'/%3E%3Cpath d='M20 44c0-14 10-24 26-26-2 16-12 26-26 26z' fill='%23e8f3ea'/%3E%3Cpath d='M20 44l14-14' stroke='%232f6b4f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="icon" type="image/png" href="logo-icon.png">
+  <link rel="apple-touch-icon" href="logo-icon.png">
+  <link rel="stylesheet" href="leaflet.css">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="agent.css">
+  <link rel="stylesheet" href="assistant.css">
+  <link rel="stylesheet" href="chat.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -17,18 +30,15 @@
   <!-- ===== Header: brand, navigation, theme toggle ===== -->
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="#/plan" aria-label="Reach home">
-        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r="30" />
-          <path class="leaf" d="M20 44c0-14 10-24 26-26-2 16-12 26-26 26z" />
-          <path class="vein" d="M20 44l14-14" />
-        </svg>
+      <a class="brand" href="#/welcome" aria-label="Reach home">
+        <img class="brand-mark" src="logo-mark.png" alt="" width="38" height="38">
         <span class="brand-text">
           <span class="brand-name">Reach</span>
           <span class="brand-tagline">Less Searching. More Exploring.</span>
         </span>
       </a>
       <nav class="site-nav" aria-label="Main">
+        <a href="#/schedule" data-nav="schedule">Schedule</a>
         <a href="#/plan" data-nav="plan">Plan</a>
         <a href="#/favorites" data-nav="favorites">Favorites <span class="fav-count" id="fav-count" hidden></span></a>
         <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Color theme: auto">
@@ -40,13 +50,48 @@
 
   <main id="main" tabindex="-1">
 
+    <!-- ===== Welcome cover: shown on the first visit, and from the logo ===== -->
+    <section class="view cover" id="view-welcome" data-view="welcome" aria-labelledby="cover-title" hidden>
+      <div class="cover-text">
+        <img class="cover-mark brand-mark" src="logo-mark.png" alt="" width="96" height="96">
+        <h1 id="cover-title" class="cover-title">Reach</h1>
+        <p class="cover-tagline">Less Searching. More Exploring.</p>
+        <p class="cover-lede">Parks and study spots that fit the free time you have between classes. Tell us your window and we'll find somewhere you can get to, enjoy, and get back from on time.</p>
+        <div class="cover-actions">
+          <a class="btn btn-primary btn-big" href="#/plan">Get started</a>
+          <a class="btn btn-big" href="#/schedule">Add my class schedule</a>
+        </div>
+      </div>
+      <div class="cover-art">
+        <svg viewBox="0 0 500 510" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustration of a path winding through green hills to a map pin">
+          <circle class="art-sun" cx="360" cy="120" r="46"/>
+          <path class="art-far" d="M0 300 L110 190 L190 250 L300 150 L400 240 L500 190 V510 H0Z"/>
+          <path class="art-near" d="M0 360 Q140 300 280 350 T500 330 V510 H0Z"/>
+          <path class="art-path" style="stroke-width: 22px" d="M230 510 C240 450 300 420 270 380 C255 360 300 350 320 345"/>
+          <ellipse class="art-water" cx="110" cy="455" rx="90" ry="20"/>
+          <path class="art-ripple" style="stroke-width: 4px" d="M70 452 h34 M120 460 h26"/>
+          <path class="art-tree" d="M30 360 l20 -70 l20 70Z M400 345 l22 -80 l22 80Z M455 350 l18 -62 l18 62Z"/>
+          <path class="art-tree-2" d="M70 365 l16 -54 l16 54Z M360 355 l16 -50 l16 50Z"/>
+          <rect class="art-trunk" x="183" y="322" width="7" height="34"/>
+          <circle class="art-tree" cx="186" cy="308" r="28"/>
+          <g class="cover-pin" transform="translate(320 250)">
+            <path d="M0 0 C-26 0 -38 20 -38 36 C-38 62 0 96 0 96 C0 96 38 62 38 36 C38 20 26 0 0 0Z"/>
+            <circle cx="0" cy="36" r="13"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+
     <!-- ===== View 1: Plan (the input form) ===== -->
     <section class="view" id="view-plan" data-view="plan" aria-labelledby="plan-title">
       <div class="hero">
         <p class="eyebrow">Free-time finder · Anywhere in the US</p>
         <h1 id="plan-title">How much free time do you have?</h1>
-        <p class="lede">Tell us your window. We'll find parks or study spots you can actually get to, enjoy, and get back from in time.</p>
+        <p class="lede">Tell us your window. We'll find parks, study spots or food you can actually get to, enjoy, and get back from in time.</p>
       </div>
+
+      <!-- "Free until your next class" hint, filled from the class schedule (app.js) -->
+      <div class="schedule-hint" id="schedule-hint" hidden></div>
 
       <form id="plan-form" class="plan-form" novalidate>
         <!-- Step numbers come from a CSS counter, so hidden steps are skipped. -->
@@ -61,8 +106,11 @@
           <legend><span class="step-num" aria-hidden="true"></span> Available time</legend>
           <div class="chips" data-group="time"></div>
           <div class="custom-time" id="custom-time-wrap" data-reveal="custom" hidden>
-            <label for="custom-minutes">Custom minutes</label>
-            <input type="number" id="custom-minutes" name="customMinutes" inputmode="numeric" min="10" max="720" step="5" placeholder="e.g. 75">
+            <span class="custom-label" id="custom-time-label">Custom</span>
+            <div class="hm-row" role="group" aria-labelledby="custom-time-label">
+              <label class="hm"><input type="number" id="custom-hours" name="customHours" inputmode="numeric" min="0" max="12" step="1" placeholder="1" aria-label="Hours"><span>hr</span></label>
+              <label class="hm"><input type="number" id="custom-mins" name="customMins" inputmode="numeric" min="0" max="59" step="5" placeholder="15" aria-label="Minutes"><span>min</span></label>
+            </div>
           </div>
         </fieldset>
 
@@ -71,8 +119,11 @@
           <legend><span class="step-num" aria-hidden="true"></span> How long do you want to stay?</legend>
           <div class="chips" data-group="stay"></div>
           <div class="custom-time" data-reveal="stay-custom" hidden>
-            <label for="stay-custom">Custom minutes</label>
-            <input type="number" id="stay-custom" name="stayCustom" inputmode="numeric" min="5" max="600" step="5" placeholder="e.g. 45">
+            <span class="custom-label" id="stay-time-label">Custom</span>
+            <div class="hm-row" role="group" aria-labelledby="stay-time-label">
+              <label class="hm"><input type="number" id="stay-hours" name="stayHours" inputmode="numeric" min="0" max="12" step="1" placeholder="0" aria-label="Hours"><span>hr</span></label>
+              <label class="hm"><input type="number" id="stay-mins" name="stayMins" inputmode="numeric" min="0" max="59" step="5" placeholder="45" aria-label="Minutes"><span>min</span></label>
+            </div>
           </div>
         </fieldset>
 
@@ -179,16 +230,22 @@
                 <legend>Available time</legend>
                 <div class="chips" data-group="time"></div>
                 <div class="custom-time" data-reveal="custom" hidden>
-                  <label for="sheet-custom-minutes">Custom minutes</label>
-                  <input type="number" id="sheet-custom-minutes" name="customMinutes" inputmode="numeric" min="10" max="720" step="5" placeholder="e.g. 75">
+                  <span class="custom-label" id="sheet-custom-time-label">Custom</span>
+                  <div class="hm-row" role="group" aria-labelledby="sheet-custom-time-label">
+                    <label class="hm"><input type="number" id="sheet-custom-hours" name="customHours" inputmode="numeric" min="0" max="12" step="1" placeholder="1" aria-label="Hours"><span>hr</span></label>
+                    <label class="hm"><input type="number" id="sheet-custom-mins" name="customMins" inputmode="numeric" min="0" max="59" step="5" placeholder="15" aria-label="Minutes"><span>min</span></label>
+                  </div>
                 </div>
               </fieldset>
               <fieldset class="sheet-group">
                 <legend>How long do you want to stay?</legend>
                 <div class="chips" data-group="stay"></div>
                 <div class="custom-time" data-reveal="stay-custom" hidden>
-                  <label for="sheet-stay-custom">Custom minutes</label>
-                  <input type="number" id="sheet-stay-custom" name="stayCustom" inputmode="numeric" min="5" max="600" step="5" placeholder="e.g. 45">
+                  <span class="custom-label" id="sheet-stay-time-label">Custom</span>
+                  <div class="hm-row" role="group" aria-labelledby="sheet-stay-time-label">
+                    <label class="hm"><input type="number" id="sheet-stay-hours" name="stayHours" inputmode="numeric" min="0" max="12" step="1" placeholder="0" aria-label="Hours"><span>hr</span></label>
+                    <label class="hm"><input type="number" id="sheet-stay-mins" name="stayMins" inputmode="numeric" min="0" max="59" step="5" placeholder="45" aria-label="Minutes"><span>min</span></label>
+                  </div>
                 </div>
               </fieldset>
               <fieldset class="sheet-group">
@@ -233,6 +290,99 @@
       </div>
     </section>
 
+    <!-- ===== View: Class schedule (saved on this device) ===== -->
+    <section class="view" id="view-schedule" data-view="schedule" aria-labelledby="schedule-title" hidden>
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">Your week</p>
+          <h1 id="schedule-title">Class schedule</h1>
+        </div>
+      </div>
+      <p class="schedule-now" id="schedule-now" aria-live="polite"></p>
+
+      <!-- Tests, quizzes and exams for your classes -->
+      <section class="tests" aria-labelledby="tests-title">
+        <div class="section-head">
+          <h2 id="tests-title">Upcoming Tests</h2>
+          <button type="button" class="btn btn-small" id="add-test-btn">Add test</button>
+        </div>
+
+        <form id="test-form" class="step class-form" novalidate hidden>
+          <h3 class="class-form-title" id="test-form-title">Add a test</h3>
+          <div class="class-field">
+            <label for="test-class">Class</label>
+            <select id="test-class" name="classId"></select>
+          </div>
+          <fieldset class="class-field class-days">
+            <legend>Type</legend>
+            <div class="chips" id="test-types"></div>
+          </fieldset>
+          <div class="class-times">
+            <div class="class-field">
+              <label for="test-date">Date</label>
+              <input type="date" id="test-date" name="date">
+            </div>
+            <div class="class-field">
+              <label for="test-time">Time</label>
+              <input type="text" id="test-time" name="time" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
+            </div>
+          </div>
+          <div class="class-field">
+            <label for="test-note">What's on it <span class="optional">(optional)</span></label>
+            <input type="text" id="test-note" name="note" maxlength="80" placeholder="e.g. Chapters 1–4" autocomplete="off">
+          </div>
+          <p class="form-error" id="test-error" role="alert" hidden></p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="test-submit">Add test</button>
+            <button type="button" class="btn" id="test-cancel">Cancel</button>
+          </div>
+        </form>
+
+        <div id="tests-list"></div>
+      </section>
+
+      <!-- Your classes: add one, then the week below -->
+      <section class="classes" aria-labelledby="classes-title">
+        <div class="section-head">
+          <h2 id="classes-title">Your Classes</h2>
+        </div>
+
+        <form id="class-form" class="step class-form" novalidate>
+          <h3 class="class-form-title" id="class-form-title">Add a class</h3>
+          <div class="class-field">
+            <label for="class-name">Class name</label>
+            <input type="text" id="class-name" name="name" maxlength="60" placeholder="e.g. CS 46A" autocomplete="off">
+          </div>
+          <div class="class-field">
+            <label for="class-room">Room / building <span class="optional">(optional)</span></label>
+            <input type="text" id="class-room" name="room" maxlength="60" placeholder="e.g. MacQuarrie Hall 222" autocomplete="off">
+          </div>
+          <fieldset class="class-field class-days">
+            <legend>Days</legend>
+            <div class="chips" id="class-days"></div>
+          </fieldset>
+          <!-- Time boxes format themselves: type 930 and get 9:30 AM (see "Smart time field" in app.js) -->
+          <div class="class-times">
+            <div class="class-field">
+              <label for="class-start">Starts</label>
+              <input type="text" id="class-start" name="start" inputmode="numeric" autocomplete="off" placeholder="e.g. 930">
+            </div>
+            <div class="class-field">
+              <label for="class-end">Ends</label>
+              <input type="text" id="class-end" name="end" inputmode="numeric" autocomplete="off" placeholder="e.g. 1045">
+            </div>
+          </div>
+          <p class="form-error" id="class-error" role="alert" hidden></p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="class-submit">Add class</button>
+            <button type="button" class="btn" id="class-cancel" hidden>Cancel</button>
+          </div>
+        </form>
+
+        <div id="schedule-list" class="schedule-list"></div>
+      </section>
+    </section>
+
     <!-- ===== View 3: Favorites ===== -->
     <section class="view" id="view-favorites" data-view="favorites" aria-labelledby="fav-title" hidden>
       <div class="results-head">
@@ -243,7 +393,8 @@
       </div>
       <!-- Spin the wheel: lets the app pick one of your favorites (built in app.js) -->
       <div id="spin-section"></div>
-      <div id="favorites-list" class="card-grid"></div>
+      <!-- Favorites tree: each saved place is a leaf (built in app.js, "Favorites tree") -->
+      <div id="favorites-list" class="fav-garden"></div>
     </section>
   </main>
 
@@ -256,8 +407,24 @@
   <!-- Small toast for "Saved to favorites" feedback -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="vendor/leaflet/leaflet.js" defer></script>
+  <!-- Back to the map you were viewing (shown on other pages once there are results; see "Back to map" in app.js) -->
+  <a class="back-to-map" id="back-to-map" href="#/results" hidden>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5L9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>
+    <span>Back to map</span>
+  </a>
+
+  <script src="leaflet.js" defer></script>
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
+  <!-- Real travel times for the place on screen (map card + Ask Reach) -->
+  <script src="routing.js" defer></script>
+  <!-- Every-day places for Ask Reach: food, malls, restrooms, pharmacies, ... -->
+  <script src="places.js" defer></script>
+  <!-- Ask Reach: pattern agent + the "how are you feeling?" assistant -->
+  <script src="agent.js" defer></script>
+  <script src="assistant.js" defer></script>
+  <!-- Reach Local Chat (Supabase client, bundled locally like Leaflet) -->
+  <script src="supabase.js" defer></script>
+  <script src="chat.js" defer></script>
 </body>
 </html>

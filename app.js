@@ -137,6 +137,7 @@ const ACTIVITY_TIPS = {
 const KIND_OPTIONS = [
   { value: 'parks', label: 'Parks' },
   { value: 'study', label: 'Study spots' },
+  { value: 'food', label: 'Food' }, // restaurants, fast food, food courts (searched by places.js)
 ];
 
 // match = shown when it matches; miss = when it doesn't; has = used for "..., though it's quiet."
@@ -183,6 +184,9 @@ const STORAGE_KEYS = {
   zipPrefix: 'greenescape.zip.',
   placesCache: 'greenescape.places',
   parkingPrefix: 'greenescape.parking.',
+  schedule: 'greenescape.schedule',
+  tests: 'greenescape.tests',
+  welcomed: 'greenescape.welcomed',
 };
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -1235,6 +1239,11 @@ function walkSwap(fit, ctx) {
 }
 
 async function runSearch(formPrefs) {
+  // Food (and the other every-day places) are found by places.js: nearest places that are open and fit your time.
+  // The stay you chose decides which give you enough time.
+  if (window.ReachPlaces && window.ReachPlaces.CATEGORIES[formPrefs.kind]) {
+    return window.ReachPlaces.search({ ...formPrefs, honorStay: true }, formPrefs.kind);
+  }
   // "Study spots" always means: activity = studying, environment = quiet.
   const kind = formPrefs.kind === 'study' ? 'study' : 'parks';
   const prefs = kind === 'study' ? { ...formPrefs, kind, activity: 'studying', environment: 'quiet' } : { ...formPrefs, kind };
@@ -1377,12 +1386,13 @@ function saveButtonHTML(placeId, compact = false) {
   </button>`;
 }
 
-/** The two numbers that matter: time to get there, and time you can spend there. */
-function tripStatsHTML(fit, mode) {
-  const short = fit.verdict === 'short';
+/** The two numbers that matter: time to get there, and time you can spend there.
+    `openEnded` (no class to be back for, and no time given): only the time to get there. */
+function tripStatsHTML(fit, mode, openEnded = false) {
+  const short = fit.verdict === 'short' && !openEnded;
   return `<div class="trip-stats">
       <div class="trip-stat"><span class="trip-value">${esc(fmtDuration(fit.travel.thereMin))}</span><span class="trip-label">to get there ${esc(mode.by)}</span></div>
-      <div class="trip-stat stay-stat ${short ? 'is-short' : 'is-enough'}"><span class="trip-value">${esc(fmtDuration(fit.onSiteMin))}</span><span class="trip-label">you can spend there</span></div>
+      ${openEnded ? '' : `<div class="trip-stat stay-stat ${short ? 'is-short' : 'is-enough'}"><span class="trip-value">${esc(fmtDuration(fit.onSiteMin))}</span><span class="trip-label">you can spend there</span></div>`}
     </div>
     ${short ? `<p class="short-note">Less than the ${esc(fmtDuration(fit.wantStayMin))} you wanted</p>` : ''}`;
 }
@@ -1447,7 +1457,7 @@ function mapCardHTML(fit, i, results) {
       </div>
       <h2 class="mc-title">${esc(place.name)}</h2>
       <p class="mc-sub">${esc(sub.join(' · '))}</p>
-      ${tripStatsHTML(fit, mode)}
+      ${tripStatsHTML(fit, mode, Boolean(results.prefs.openEnded))}
       ${altModeHTML(fit, results)}
       ${fit.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}
       <p class="mc-desc">${esc(place.description)}</p>
@@ -1531,7 +1541,8 @@ function renderWeatherChip(results) {
   if (mode.note) items.push(`<li class="wx-info">${esc(mode.label)} times are estimates (${esc(mode.note)}).</li>`);
   const stay = `Stay ${fmtDuration(prefs.wantStayMin || 30)}`;
   const travel = capitalize(mode.by); // "On foot", "By car", "By transit"
-  const planBits = prefs.kind === 'study' ? ['Study spots', stay, travel] : ['Parks', stay, travel, act.label, env.label];
+  const planBits = prefs.kindLabel ? [prefs.kindLabel, stay, travel] // food and other every-day places (places.js)
+    : prefs.kind === 'study' ? ['Study spots', stay, travel] : ['Parks', stay, travel, act.label, env.label];
   $('#wx-panel').innerHTML = `
     <p class="wx-plan">${esc(planBits.join(' · '))}<br>
       From ${esc(where)} · ${esc(fmtTime(start))} to ${esc(fmtTime(end))}</p>
@@ -1543,7 +1554,7 @@ function liveStatusHTML(results) {
   const { live, origin } = results;
   const miles = kmToMi(live.radiusKm).toFixed(live.radiusKm < 5 ? 1 : 0);
   const where = origin.source === 'location' ? 'you' : esc(origin.label || origin.zip);
-  const what = results.prefs.kind === 'study' ? 'libraries and cafes' : 'parks';
+  const what = results.prefs.kindPlural || (results.prefs.kind === 'study' ? 'libraries and cafes' : 'parks');
   const messages = {
     live: `Checked ${live.count} ${what} within ${miles} mi of ${where}.`,
     cache: `Checked ${live.count} ${what} within ${miles} mi of ${where}.`,
@@ -1573,7 +1584,10 @@ function renderResults() {
     map.invalidateSize();
     drawMarkers(results);
   }
-  showRecommendation(0, { animate: false });
+  // Coming back with "Back to map": reopen the place you were looking at, not #1
+  const resume = MAP.resume && MAP.index < results.fitting.length ? MAP.index : 0;
+  MAP.resume = false;
+  showRecommendation(resume, { animate: false });
 }
 
 /* ---------------------------------------------------------------------
@@ -1582,7 +1596,7 @@ function renderResults() {
    shown in the card on top; the back/next buttons (or arrow keys, a swipe on the
    card, or tapping a pin) step through them in Escape Score order.
    --------------------------------------------------------------------- */
-const MAP = { map: null, tiles: null, layer: null, pins: [], index: 0, tileLoads: 0, tileErrors: 0, tileStep: 0 };
+const MAP = { map: null, tiles: null, layer: null, pins: [], index: 0, resume: false, tileLoads: 0, tileErrors: 0, tileStep: 0 };
 
 function isDarkTheme() {
   const forced = document.documentElement.getAttribute('data-theme');
@@ -1877,9 +1891,152 @@ function renderFavorites() {
     return;
   }
 
-  $('#favorites-list').innerHTML = favs.map(({ place, savedAt }) => `
+  const list = $('#favorites-list');
+  if (!favs.some((f) => f.place.id === FAV_TREE.selected)) FAV_TREE.selected = null;
+  FAV_TREE.picked.forEach((id) => { if (!favs.some((f) => f.place.id === id)) FAV_TREE.picked.delete(id); });
+  list.classList.toggle('is-selecting', FAV_TREE.selecting);
+  list.innerHTML = '<div class="fav-toolbar" id="fav-toolbar"></div>' + favTreeHTML(favs)
+    + '<div class="fav-detail" id="fav-detail" aria-live="polite"></div>';
+  renderFavToolbar(favs);
+  renderFavDetail(favs, mode, origin);
+  list.onclick = (e) => {
+    const act = e.target.closest('[data-fav-act]');
+    if (act) { onFavAction(act.dataset.favAct, favs); return; }
+    const leaf = e.target.closest('[data-fav-leaf]');
+    if (!leaf) return;
+    const id = leaf.dataset.favLeaf;
+    if (FAV_TREE.selecting) {
+      // Select mode: tap to mark places for removal
+      if (FAV_TREE.picked.has(id)) FAV_TREE.picked.delete(id); else FAV_TREE.picked.add(id);
+      $$('[data-fav-leaf]', list).forEach((b) => b.setAttribute('aria-pressed', String(FAV_TREE.picked.has(b.dataset.favLeaf))));
+      renderFavToolbar(favs);
+      return;
+    }
+    // Tap a bubble to raise it and show the place below the tree; tap it again to put it back.
+    FAV_TREE.selected = FAV_TREE.selected === id ? null : id;
+    $$('[data-fav-leaf]', list).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.favLeaf === FAV_TREE.selected)));
+    renderFavDetail(favs, mode, origin);
+    if (FAV_TREE.selected) $('#fav-detail').scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
+  };
+}
+
+/* --- Removing favorites: Select (pick several) and Remove all --- */
+function renderFavToolbar(favs) {
+  const n = FAV_TREE.picked.size;
+  $('#fav-toolbar').innerHTML = FAV_TREE.selecting
+    ? `<span class="fav-picked" aria-live="polite">${n ? `${n} selected` : 'Tap places to select them'}</span>
+       <button type="button" class="btn btn-small btn-danger" data-fav-act="remove-picked"${n ? '' : ' disabled'}>Remove selected</button>
+       <button type="button" class="btn btn-small" data-fav-act="cancel">Cancel</button>`
+    : `<button type="button" class="btn btn-small" data-fav-act="select">Select</button>
+       <button type="button" class="btn btn-small btn-danger" data-fav-act="remove-all">Remove all</button>`;
+  const hint = $('.fav-hint');
+  if (hint) hint.textContent = FAV_TREE.selecting ? 'Tap the places you want to remove.' : 'Tap one of your places to see it.';
+}
+
+function onFavAction(action, favs) {
+  if (action === 'select') {
+    FAV_TREE.selecting = true;
+    FAV_TREE.selected = null;
+    FAV_TREE.picked.clear();
+  } else if (action === 'cancel') {
+    FAV_TREE.selecting = false;
+    FAV_TREE.picked.clear();
+  } else if (action === 'remove-picked') {
+    removeFavorites([...FAV_TREE.picked]);
+    FAV_TREE.selecting = false;
+    FAV_TREE.picked.clear();
+  } else if (action === 'remove-all') {
+    const n = favs.length;
+    if (!window.confirm(`Remove all ${n} favorite${n === 1 ? '' : 's'}? This can't be undone.`)) return;
+    removeFavorites(favs.map((f) => f.place.id));
+  }
+  renderFavorites();
+}
+
+/** Remove several favorites at once (one save, one message). */
+function removeFavorites(ids) {
+  if (!ids.length) return;
+  const gone = new Set(ids);
+  if (!store.set(STORAGE_KEYS.favorites, getFavorites().filter((f) => !gone.has(f.id)))) {
+    showToast("Couldn't save. Your browser is blocking storage.");
+    return;
+  }
+  syncSaveButtons();
+  updateFavCount();
+  showToast(ids.length === 1 ? 'Removed 1 favorite' : `Removed ${ids.length} favorites`);
+}
+
+/* --- Favorites tree ---
+   Each favorite is a round bubble on a tree (most recent at the top), on its own branch.
+   Bubbles are buttons placed over an SVG tree by percentage, so branches and bubbles stay
+   lined up at any size. Spare spots get plain bubbles so the canopy is always full. */
+const FAV_TREE = {
+  // The tree, in a 1000 x 900 drawing: a curved trunk, wide at the roots and tapering up into the crown,
+  // with one branch off the right side ending in a point. Filled outlines worked out from smooth centerlines.
+  bark: [
+    'M571 875 L569 872 L566 870 L562 866 L558 863 L554 859 L550 855 L546 851 L542 847 L538 842 L536 838 L533 833 L531 829 L530 824 L528 820 L527 816 L526 812 L526 809 L525 805 L524 802 L524 799 L524 795 L523 791 L523 787 L523 783 L523 779 L523 774 L523 770 L524 765 L524 761 L524 756 L525 752 L525 748 L526 743 L527 739 L528 734 L529 729 L530 724 L531 719 L532 714 L533 709 L534 705 L535 700 L536 696 L537 692 L538 687 L539 682 L540 677 L542 672 L543 667 L543 661 L544 656 L545 651 L545 645 L546 640 L546 635 L546 630 L546 625 L546 620 L546 615 L546 610 L546 605 L545 599 L545 594 L544 589 L544 585 L543 581 L542 577 L542 573 L541 570 L541 567 L540 564 L540 561 L540 558 L539 555 L539 553 L539 550 L539 548 L538 546 L538 544 L538 543 L478 547 L478 549 L478 550 L478 552 L478 555 L478 557 L479 560 L479 563 L479 566 L479 569 L479 573 L479 577 L480 581 L480 585 L481 589 L481 593 L482 596 L482 600 L482 604 L482 607 L482 610 L482 614 L482 618 L481 621 L481 625 L480 629 L480 633 L479 637 L478 641 L477 645 L477 649 L476 652 L475 656 L474 660 L472 663 L471 667 L470 672 L468 676 L466 681 L465 686 L463 691 L462 696 L460 700 L459 705 L457 710 L455 715 L454 721 L452 726 L450 732 L449 738 L448 744 L446 749 L445 755 L444 761 L443 766 L443 772 L442 778 L441 783 L441 789 L440 795 L440 801 L440 807 L440 813 L441 819 L441 825 L442 830 L442 835 L442 839 L442 844 L442 848 L440 852 L439 857 L437 862 L434 867 L432 872 L429 878 L426 883 L423 886 L420 886 L418 886 L417 886 Z',
+    'M522 714 L524 712 L527 710 L530 707 L534 704 L538 700 L542 697 L546 693 L551 689 L555 685 L559 682 L563 678 L567 675 L571 672 L575 668 L580 665 L584 661 L588 657 L593 653 L597 649 L601 645 L605 641 L608 636 L612 631 L616 625 L619 620 L622 615 L625 610 L628 606 L630 603 L632 600 L630 602 L626 605 L623 608 L619 612 L614 616 L610 620 L605 624 L600 628 L596 632 L591 635 L587 638 L583 641 L578 643 L573 646 L569 649 L564 652 L559 654 L554 657 L550 660 L545 662 L540 665 L536 668 L531 670 L526 673 L521 676 L516 678 L512 681 L508 683 L505 685 L502 686 Z',
+  ],
+  // The canopy: a round crown of bubbles packed in offset rows (a dome that sits on the trunk), like leaves
+  // bunching together. Favorites fill it from the middle outward (newest first); spare spots get plain
+  // bubbles, so the crown is always full and round. [x, y, size]. The drawing is 1000 x 900.
+  // Wide screens: 17 bubbles in rows of 1, 4, 5, 4 and 3, just touching.
+  slots: [
+    [512, 330, 1], [437, 200, 1], [587, 200, 1], [437, 460, 1], [587, 460, 1], [362, 330, 1],
+    [662, 330, 1], [512, 75, 1], [287, 200, 1], [737, 200, 1], [212, 330, 1], [812, 330, 1],
+    [287, 460, 1], [737, 460, 1], [362, 590, 1], [662, 590, 1], [512, 590, 1],
+  ],
+  // Phones: 7 bigger bubbles in a round 2-3-2 crown, so names stay readable.
+  phoneSlots: [
+    [512, 405, 1], [395, 200, 1], [630, 200, 1], [277, 405, 1], [747, 405, 1], [395, 610, 1], [630, 610, 1],
+  ],
+  phone: () => Boolean(window.matchMedia && window.matchMedia('(max-width: 600px)').matches),
+  top: 0, height: 900, // the part of the drawing that's shown
+  selected: null,     // id of the bubble that's raised, with its details shown below
+  selecting: false,   // Select mode: tapping marks places for removal instead
+  picked: new Set(),  // ids marked in Select mode
+};
+
+/** Where a bubble sits, as percentages of the tree (drawing units: x 0-1000, y shown from FAV_TREE.top). */
+const placeStyle = (x, y, size) => `left:${x / 10}%;top:${((y - FAV_TREE.top) / FAV_TREE.height) * 100}%;--s:${size}`;
+
+function favTreeHTML(favs) {
+  const { bark } = FAV_TREE;
+  const slots = FAV_TREE.phone() ? FAV_TREE.phoneSlots : FAV_TREE.slots;
+  const onTree = favs.slice(0, slots.length);
+  // Spare spots in the canopy: plain bubbles (just foliage, not buttons)
+  const fillers = slots.slice(onTree.length).map(([x, y, size], k) => {
+    const i = onTree.length + k;
+    return `<span class="fav-leaf is-filler" aria-hidden="true" style="${placeStyle(x, y, size)}"></span>`;
+  }).join('');
+  const bubble = (f, i, extra = '') => {
+    const slot = slots[i];
+    const pos = slot ? ` style="${placeStyle(...slot)}"` : '';
+    return `<button type="button" class="fav-leaf${extra}"${pos}
+        data-fav-leaf="${esc(f.place.id)}" aria-pressed="${f.place.id === FAV_TREE.selected}"
+        aria-label="${esc(f.place.name)}: show details"><span class="fav-leaf-name">${esc(f.place.name)}</span></button>`;
+  };
+  const more = favs.slice(slots.length);
+  return `<div class="fav-tree" role="group" aria-label="Your favorite places, as bubbles on a tree">
+      <svg class="tree-art" viewBox="0 ${FAV_TREE.top} 1000 ${FAV_TREE.height}" aria-hidden="true">
+        <ellipse class="tree-ground" cx="495" cy="880" rx="230" ry="16"/>
+        ${bark.map((d) => `<path class="tree-trunk" d="${d}"/>`).join('')}
+      </svg>
+      ${fillers}
+      ${onTree.map((f, i) => bubble(f, i)).join('')}
+    </div>
+    ${more.length ? `<div class="fav-more"><p class="fav-more-title">More favorites</p>${more.map((f, i) => bubble(f, slots.length + i, ' is-chip')).join('')}</div>` : ''}
+    <p class="fav-hint">Tap one of your places to see it.</p>`;
+}
+
+/** The raised bubble's place, below the tree (same details and buttons as before: directions, remove). */
+function renderFavDetail(favs, mode, origin) {
+  const box = $('#fav-detail');
+  const f = favs.find((x) => x.place.id === FAV_TREE.selected);
+  if (!f) { box.innerHTML = ''; return; }
+  const { place, savedAt } = f;
+  box.innerHTML = `
     <article class="card fav-card">
-      <div class="card-media">${mediaHTML(place)}${sourceTagHTML(place)}</div>
       <div class="card-body">
         <p class="card-eyebrow">${esc(place.kindLabel || TYPE_LABELS[place.type] || place.type)} · saved ${esc(new Date(savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }))}</p>
         <h2 class="card-title">${esc(place.name)}</h2>
@@ -1892,7 +2049,7 @@ function renderFavorites() {
           <button type="button" class="btn btn-danger" data-remove="${esc(place.id)}">Remove</button>
         </div>
       </div>
-    </article>`).join('');
+    </article>`;
 }
 
 /* --- Spin the wheel (Favorites page) ---
@@ -2023,8 +2180,66 @@ function showSpinResult(place) {
       <p class="eyebrow">The wheel picked</p>
       <h3 class="spin-pick-name">${esc(place.name)}</h3>
       <p class="spin-pick-meta">${esc(place.kindLabel || TYPE_LABELS[place.type] || place.type)} · ${esc(hoursText(place))}</p>
-      <a class="btn btn-primary" href="${esc(directionsUrl(place, WHEEL.mode, WHEEL.origin))}" target="_blank" rel="noopener">Get directions</a>
+      <div class="spin-pick-actions">
+        <a class="btn btn-primary" href="${esc(directionsUrl(place, WHEEL.mode, WHEEL.origin))}" target="_blank" rel="noopener">Get directions</a>
+        <button type="button" class="btn" id="spin-map"><span class="btn-label">Show on map</span><span class="spinner" aria-hidden="true"></span></button>
+      </div>
     </div>`;
+  $('#spin-map').addEventListener('click', (e) => showPlaceOnMap(place, e.currentTarget));
+}
+
+/** Open the results map on one place (the wheel's pick): pin #1, with its card showing.
+    Uses this session's search if there is one, otherwise runs one from your location (or ZIP)
+    with your last plan. A place outside the plan still shows, with the reason as a note. */
+async function showPlaceOnMap(place, btn) {
+  const label = btn.querySelector('.btn-label');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  label.textContent = 'Opening map…';
+  try {
+    let results = state.results;
+    if (!results) {
+      const saved = { ...DEFAULT_PREFS, freeMin: 120, wantStayMin: 30, ...store.get(STORAGE_KEYS.prefs, {}) };
+      if (locationState.status === 'pending') await Promise.race([locationState.promise, new Promise((r) => setTimeout(r, 6000))]);
+      if (locationState.status === 'ok') saved.origin = 'location';
+      else if (/^\d{5}$/.test(saved.zip || '')) saved.origin = 'zip';
+      else {
+        showToast('Set your starting point on the Plan page first.');
+        location.hash = '#/plan';
+        return;
+      }
+      results = await runSearch(saved);
+    }
+    putPlaceFirst(results, place);
+    state.results = results;
+    if (location.hash === '#/results') route(); else location.hash = '#/results';
+  } catch (err) {
+    if (!(err instanceof SearchError)) console.error(err);
+    showToast(err instanceof SearchError ? err.message : "Couldn't open the map. Please try again.");
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    label.textContent = 'Show on map';
+  }
+}
+
+/** Move a place to the front of the results, adding it (fit-checked against the same plan) if it isn't there. */
+function putPlaceFirst(results, place) {
+  const i = results.fitting.findIndex((f) => f.place.id === place.id);
+  if (i >= 0) { results.fitting.unshift(...results.fitting.splice(i, 1)); return; }
+  indexPlaces([place]);
+  const ctx = {
+    origin: results.origin, mode: results.prefs.mode, activity: results.prefs.activity, freeMin: results.prefs.freeMin,
+    wantStayMin: results.prefs.wantStayMin || 30, start: results.start, sun: results.sun,
+  };
+  const fit = walkSwap(checkFit(place, ctx), ctx);
+  const missed = fit.verdict === 'no';
+  results.fitting.unshift({
+    ...fit,
+    verdict: missed ? 'short' : fit.verdict, // it's on the map because you asked for it, so show it rather than hide it
+    notes: missed ? [fit.reason.replace(/\.$/, ''), ...fit.notes] : fit.notes,
+    scoring: scorePlace(fit, { ...results.prefs, mode: fit.mode }, results.wx),
+  });
 }
 
 /* ---------------------------------------------------------------------
@@ -2059,18 +2274,35 @@ function fillForm(form, prefs) {
   renderChips(form, 'activity', toOptions(ACTIVITIES), p.activity);
   renderChips(form, 'mode', toOptions(CONFIG.MODES), p.mode);
   renderChips(form, 'environment', toOptions(ENVIRONMENTS), p.environment);
-  form.elements.customMinutes.value = p.customMinutes || '';
-  form.elements.stayCustom.value = p.stayCustom || '';
+  setHoursMins(form, 'custom', p.customMinutes);
+  setHoursMins(form, 'stay', p.stayCustom);
   form.elements.laterTime.value = p.laterTime || '';
   form.elements.zip.value = p.zip || '';
   syncReveals(form);
 }
 
-/** Show the custom-minutes / start-time inputs only when those chips are picked,
-    and hide the park-only questions (activity, environment) for study spots. */
+/* Custom times are typed as hours + minutes (two boxes); plans still store total minutes. */
+/** Total minutes from a form's `<name>Hours` and `<name>Mins` boxes, or '' when both are empty. */
+function readHoursMins(form, name) {
+  const h = form.elements[`${name}Hours`].value.trim();
+  const m = form.elements[`${name}Mins`].value.trim();
+  if (!h && !m) return '';
+  return String(Number(h || 0) * 60 + Number(m || 0));
+}
+
+/** Fill a form's hour and minute boxes from total minutes (90 -> 1 hr 30 min). */
+function setHoursMins(form, name, minutes) {
+  const total = Number(minutes);
+  const has = minutes !== '' && minutes != null && Number.isFinite(total);
+  form.elements[`${name}Hours`].value = has && total >= 60 ? String(Math.floor(total / 60)) : '';
+  form.elements[`${name}Mins`].value = has && total % 60 ? String(total % 60) : (has && total < 60 ? '0' : '');
+}
+
+/** Show the custom time / start-time inputs only when those chips are picked,
+    and hide the park-only questions (activity, environment) for study spots and food. */
 function syncReveals(form) {
-  const study = form.elements.kind.value === 'study';
-  form.querySelectorAll('[data-parks-only]').forEach((el) => { el.hidden = study; });
+  const notParks = form.elements.kind.value !== 'parks';
+  form.querySelectorAll('[data-parks-only]').forEach((el) => { el.hidden = notParks; });
   const time = form.elements.time.value;
   const when = form.elements.when.value;
   form.querySelector('[data-reveal="custom"]').hidden = time !== 'custom';
@@ -2111,25 +2343,25 @@ function setupForm() {
 function readForm(form) {
   const f = form.elements;
   const raw = {
-    kind: f.kind.value === 'study' ? 'study' : 'parks',
-    time: f.time.value, customMinutes: f.customMinutes.value.trim(),
-    stay: f.stay.value, stayCustom: f.stayCustom.value.trim(),
+    kind: ['study', 'food'].includes(f.kind.value) ? f.kind.value : 'parks',
+    time: f.time.value, customMinutes: readHoursMins(form, 'custom'),
+    stay: f.stay.value, stayCustom: readHoursMins(form, 'stay'),
     when: f.when.value, laterTime: f.laterTime.value,
     activity: f.activity.value, mode: f.mode.value, environment: f.environment.value,
     zip: f.zip.value.trim(),
   };
   let freeMin = Number(raw.time);
   if (raw.time === 'custom') {
-    freeMin = Number(raw.customMinutes);
+    freeMin = raw.customMinutes === '' ? NaN : Number(raw.customMinutes);
     if (!Number.isFinite(freeMin) || freeMin < 10 || freeMin > 720) {
-      return { error: 'Enter a custom time between 10 and 720 minutes.', field: 'customMinutes' };
+      return { error: 'Enter a custom time between 10 min and 12 hr.', field: 'customHours' };
     }
   }
   let wantStayMin = Number(raw.stay);
   if (raw.stay === 'custom') {
-    wantStayMin = Number(raw.stayCustom);
+    wantStayMin = raw.stayCustom === '' ? NaN : Number(raw.stayCustom);
     if (!Number.isFinite(wantStayMin) || wantStayMin < 5 || wantStayMin > 600) {
-      return { error: 'Enter how long you want to stay, between 5 and 600 minutes.', field: 'stayCustom' };
+      return { error: 'Enter how long you want to stay, between 5 min and 10 hr.', field: 'stayHours' };
     }
   }
   raw.wantStayMin = Math.round(wantStayMin || 30);
@@ -2344,10 +2576,533 @@ async function getOrigin(prefs) {
   return resolveZip(prefs.zip);
 }
 
-/* --- Hash routing: #/plan, #/results, #/favorites --- */
+/* --- Class schedule (#/schedule) ---
+   Classes are saved on this device: { id, name, room, days: ['mon', ...], start: 'HH:MM', end: 'HH:MM' }.
+   Tests: { id, classId, type, date: 'YYYY-MM-DD', time: 'HH:MM' or '', note }.
+   The Plan page uses both to offer "free until your next class" and study-spot nudges before tests. */
+const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DAY_LABELS = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+const DAY_NAMES = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
+const TEST_TYPES = ['Quiz', 'Test', 'Midterm', 'Final'];
+let editingClassId = null;
+let editingTestId = null;
+const timeFields = {}; // smart time fields by input id
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const hhmmToMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+const nowMin = (d = new Date()) => d.getHours() * 60 + d.getMinutes();
+/** "13:30" -> "1:30 PM" in the user's locale */
+const fmtClock = (t) => { const d = new Date(); d.setHours(...String(t).split(':').map(Number), 0, 0); return fmtTime(d, { relativeDay: false }); };
+const isoDate = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const parseIsoDate = (s) => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); };
+/** Whole days from today until a 'YYYY-MM-DD' date (0 = today, negative = past). */
+const daysUntil = (s) => Math.round((parseIsoDate(s) - parseIsoDate(isoDate())) / 86400000);
+const countdownText = (n) => (n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : `In ${n} days`);
+const fmtDay = (s) => parseIsoDate(s).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+/* --- Smart time field ---
+   One text box instead of separate hour / minute / AM-PM parts. Type "930" and it reads "9:30" with
+   AM or PM picked for you; "1330" works too. Type "a" or "p", or tap the AM/PM button, to switch.
+   `after` (optional) returns minutes-after-midnight that this time should come after (an end time
+   follows its start), which decides the AM/PM guess. */
+
+/** "930" -> ['9', '30'], "1015" -> ['10', '15'], "1" -> ['1', ''] (could still become 10-12). */
+function splitTimeDigits(d) {
+  const twoDigitHour = d[0] === '0' || (d[0] === '1' && d[1] <= '2')
+    || (d.length === 4 && (d[0] === '1' || (d[0] === '2' && d[1] <= '3'))); // 24-hour "1330", "2015"
+  return twoDigitHour && d.length >= 2 ? [d.slice(0, 2), d.slice(2)] : [d.slice(0, 1), d.slice(1)];
+}
+
+function makeSmartTime(input, { after, onChange } = {}) {
+  let digits = '';
+  let explicit = ''; // 'AM' | 'PM' once the user picks one
+  const wrap = document.createElement('div');
+  wrap.className = 'time-field';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'meridiem';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.append(input, btn);
+
+  const parts = () => { const [hd, md] = splitTimeDigits(digits); return { hd, md, h: Number(hd), m: Number(md || 0) }; };
+  const meridiem = () => {
+    const { hd, h, m } = parts();
+    if (!hd) return '';
+    if (explicit) return explicit;
+    const start = after ? after() : null;
+    if (start != null) return (h % 12) * 60 + m > start ? 'AM' : 'PM'; // earliest time after the start
+    return h === 12 || h <= 6 ? 'PM' : 'AM'; // classes rarely start before 7 AM or after 6 PM
+  };
+
+  function render() {
+    let { hd, md, h } = parts();
+    if (md.length === 2 && hd.length === 2) {
+      // Turn 24-hour input into 12-hour + AM/PM so the button still works.
+      if (h > 12 && h <= 23) { digits = pad2(h - 12) + md; explicit = 'PM'; }
+      if (h === 0) { digits = `12${md}`; explicit = 'AM'; }
+      ({ hd, md, h } = parts());
+    }
+    if (!digits) explicit = '';
+    const hourDone = hd.length === 2 || hd >= '2';
+    input.value = !hd ? '' : !md && !hourDone ? hd : `${Number(hd)}:${md}`;
+    const bad = md.length === 2 && (Number(md) > 59 || h > 12 || h === 0);
+    if (bad) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
+    const mer = meridiem();
+    btn.textContent = mer;
+    btn.hidden = !mer;
+    btn.setAttribute('aria-label', `${mer}. Switch to ${mer === 'AM' ? 'PM' : 'AM'}`);
+  }
+
+  // Fill in what's missing when leaving the box: "9" -> 9:00, "9:3" -> 9:30.
+  function finish() {
+    const { hd, md } = parts();
+    if (hd && md.length < 2) { digits = pad2(Number(hd)) + `${md}00`.slice(0, 2); render(); }
+  }
+
+  input.addEventListener('input', (e) => {
+    const typed = e.inputType === 'insertText' && e.data && e.data.length === 1 && input.value !== e.data ? e.data : null;
+    if (typed) {
+      if (/\d/.test(typed)) { if (digits.length < 4) digits += typed; }
+      else if (typed === ':' && digits.length === 1) digits = `0${digits}`; // "1:" means 1 o'clock, not 10-12
+      else if (/[ap]/i.test(typed)) explicit = /a/i.test(typed) ? 'AM' : 'PM';
+    } else if (e.inputType === 'deleteContentBackward' && input.value) {
+      digits = digits.slice(0, -1);
+    } else { // paste, autofill, typing over a selection
+      digits = input.value.replace(/\D/g, '').slice(0, 4);
+      if (/a/i.test(input.value)) explicit = 'AM'; else if (/p/i.test(input.value)) explicit = 'PM';
+    }
+    render();
+    if (onChange) onChange();
+  });
+  input.addEventListener('blur', () => { finish(); if (onChange) onChange(); });
+  btn.addEventListener('click', () => {
+    explicit = meridiem() === 'AM' ? 'PM' : 'AM';
+    render();
+    if (onChange) onChange();
+  });
+
+  const field = {
+    /** 'HH:MM' (24-hour), '' when empty, or null when it isn't a real time. */
+    get() { finish(); return field.peek(); },
+    /** Same as get(), without completing a half-typed time (safe to call while the user types). */
+    peek() {
+      const { hd, md, h, m } = parts();
+      if (!hd) return '';
+      if (md.length !== 2 || m > 59 || h < 1 || h > 12) return null;
+      return `${pad2((h % 12) + (meridiem() === 'PM' ? 12 : 0))}:${pad2(m)}`;
+    },
+    set(hhmm) {
+      if (!hhmm) { field.clear(); return; }
+      const [h, m] = hhmm.split(':').map(Number);
+      digits = pad2(h % 12 || 12) + pad2(m);
+      explicit = h >= 12 ? 'PM' : 'AM';
+      render();
+    },
+    clear() { digits = ''; explicit = ''; render(); },
+    refresh: render,
+  };
+  render();
+  timeFields[input.id] = field;
+  return field;
+}
+
+function getClasses() {
+  const list = store.get(STORAGE_KEYS.schedule, []);
+  return Array.isArray(list) ? list.filter((c) => c && c.id && Array.isArray(c.days)) : [];
+}
+
+function getTests() {
+  const list = store.get(STORAGE_KEYS.tests, []);
+  return Array.isArray(list) ? list.filter((t) => t && t.id && /^\d{4}-\d{2}-\d{2}$/.test(t.date || '')) : [];
+}
+
+/** Tests from today on, soonest first. */
+function upcomingTests() {
+  return getTests()
+    .filter((t) => daysUntil(t.date) >= 0)
+    .sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
+}
+
+const className = (id) => { const c = getClasses().find((x) => x.id === id); return c ? c.name : 'Class'; };
+
+/** Today's situation: the class you're in now, or the next one today (with minutes until it starts). */
+/** Today's fixed points, earliest first: your classes, plus today's tests (every test has a time).
+    A test at its class's usual time takes that class's place; a test at another time (a 7 PM final)
+    is added, lasting as long as its class (or an hour). Each has { name, start, end } like a class. */
+function todaysEvents(date = new Date()) {
+  const day = DAY_KEYS[date.getDay()];
+  const events = getClasses().filter((c) => c.days.includes(day)).map((c) => ({ ...c }));
+  getTests().filter((t) => t.date === isoDate(date) && t.time).forEach((t) => {
+    const cls = getClasses().find((c) => c.id === t.classId);
+    const name = `${cls ? cls.name : 'Class'} ${t.type}`; // "PHYS 4A Test"
+    const sameSlot = events.find((e) => e.id === t.classId && e.start === t.time);
+    if (sameSlot) { sameSlot.name = name; sameSlot.test = t; return; }
+    const endMin = Math.min(24 * 60 - 1, hhmmToMin(t.time) + (cls ? hhmmToMin(cls.end) - hhmmToMin(cls.start) : 60));
+    events.push({ id: t.id, name, start: t.time, end: `${pad2(Math.floor(endMin / 60))}:${pad2(endMin % 60)}`, test: t });
+  });
+  return events.sort((a, b) => hhmmToMin(a.start) - hhmmToMin(b.start));
+}
+
+function scheduleStatus(date = new Date()) {
+  const n = nowMin(date);
+  const todays = todaysEvents(date); // classes and tests, so free time ends at a test too
+  const current = todays.find((c) => hhmmToMin(c.start) <= n && n < hhmmToMin(c.end));
+  const next = todays.find((c) => hhmmToMin(c.start) > n);
+  return { hasClasses: getClasses().length > 0, current, next, freeMin: next ? hhmmToMin(next.start) - n : null };
+}
+
+/** One-line summary used on both the Plan and Schedule pages. */
+function scheduleStatusText(s) {
+  if (s.current) return `You're in <strong>${esc(s.current.name)}</strong> until ${esc(fmtClock(s.current.end))}.`;
+  if (s.next) return `You're free for <strong>${esc(fmtDuration(s.freeMin))}</strong>, until ${esc(s.next.name)} at ${esc(fmtClock(s.next.start))}.`;
+  return 'No more classes today. Your time is yours.';
+}
+
+/** The next test in the coming 3 days that hasn't started yet. */
+function soonTest() {
+  return upcomingTests().find((t) => daysUntil(t.date) <= 3 && !(daysUntil(t.date) === 0 && t.time && hhmmToMin(t.time) <= nowMin()));
+}
+
+/** Pick the kind of spot and the time window from the schedule:
+    a test in the next 3 days -> a quiet study spot; otherwise -> a relaxing park.
+    The window runs until the next class or test (minus 5 minutes to walk in), or starts when the current one ends. */
+function decideSpot(s = scheduleStatus()) {
+  const test = soonTest();
+  const study = Boolean(test);
+  let when = 'now';
+  let laterTime = '';
+  let untilMin = s.next ? hhmmToMin(s.next.start) : null;
+  if (s.current) {
+    // In class now: leave when it ends, and be back for the class after it.
+    when = 'later';
+    laterTime = s.current.end;
+    const after = todaysEvents().find((c) => hhmmToMin(c.start) >= hhmmToMin(s.current.end)); // class or test
+    untilMin = after ? hhmmToMin(after.start) : null;
+  }
+  const fromMin = s.current ? hhmmToMin(s.current.end) : nowMin();
+  // No class to be back for: search a 2-hour window, but it's open-ended, so cards don't claim a stay time.
+  const openEnded = untilMin == null;
+  const freeMin = openEnded ? 120 : Math.min(720, Math.floor((untilMin - fromMin - 5) / 5) * 5);
+  // Study: stay for most of the window. Relax: a calm half hour (less if the gap is short).
+  const stayMin = Math.max(10, Math.min(study ? 90 : 30, Math.floor((freeMin * (study ? 0.6 : 0.4)) / 5) * 5));
+  return { study, test, when, laterTime, freeMin, stayMin, openEnded, label: study ? 'Find a study spot' : 'Find a relaxation spot' };
+}
+
+/** Plan page banner: free time before your next class, a heads-up about tests,
+    and one button that picks the best spot for right now and opens it on the map. */
+function renderScheduleHint() {
+  const box = $('#schedule-hint');
+  const s = scheduleStatus();
+  const pick = decideSpot(s);
+  const rows = [];
+  if (!s.hasClasses) {
+    rows.push(`<p>Add your <a href="#/schedule">class schedule</a> and we'll fit escapes between your classes.</p>`);
+  } else {
+    rows.push(`<p>${scheduleStatusText(s)}</p>`);
+  }
+  const tooShort = pick.freeMin < 15;
+  const why = pick.study
+    ? `A quiet study spot you can reach and leave in time${s.next || s.current ? ' for your next class' : ''}.`
+    : `A relaxing park for a ${fmtDuration(pick.stayMin)} break${s.next || s.current ? ' that gets you back before class' : ''}.`;
+  box.innerHTML = `${rows.map((r) => `<div class="hint-row">${r}</div>`).join('')}
+    <div class="hint-row hint-action">
+      <p class="hint-why">${tooShort ? 'Not enough time for a trip before your next class.' : esc(why)}</p>
+      ${tooShort ? '' : `<button type="button" class="btn btn-small btn-primary" id="hint-go">
+        <span class="btn-label">${esc(pick.label)}</span><span class="spinner" aria-hidden="true"></span>
+      </button>`}
+    </div>`;
+  box.hidden = false;
+  if (!tooShort) $('#hint-go').addEventListener('click', (e) => goToBestSpot(pick, e.currentTarget));
+}
+
+/** Run the search for the picked spot and open the map on the top recommendation. */
+async function goToBestSpot(pick, btn) {
+  const form = $('#plan-form');
+  const saved = { ...DEFAULT_PREFS, ...store.get(STORAGE_KEYS.prefs, {}) };
+  const prefs = {
+    ...saved,
+    kind: pick.study ? 'study' : 'parks',
+    activity: pick.study ? 'studying' : 'relaxing',
+    environment: pick.study ? 'quiet' : saved.environment,
+    time: 'custom', customMinutes: String(pick.freeMin), freeMin: pick.freeMin,
+    stay: 'custom', stayCustom: String(pick.stayMin), wantStayMin: pick.stayMin,
+    when: pick.when, laterTime: pick.laterTime,
+    openEnded: Boolean(pick.openEnded), // no class to be back for: don't show a stay time
+  };
+  fillForm(form, prefs); // so the form matches if they come back to tweak it
+
+  const label = btn.querySelector('.btn-label');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  label.textContent = 'Picking the best spot…';
+  try {
+    if (locationState.status === 'pending') await Promise.race([locationState.promise, new Promise((r) => setTimeout(r, 6000))]);
+    if (locationState.status === 'ok') prefs.origin = 'location';
+    else if (/^\d{5}$/.test(prefs.zip || '')) prefs.origin = 'zip';
+    else {
+      showZipFallback('Enter your ZIP code so we can find spots near you:');
+      $('#zip').focus();
+      return;
+    }
+    store.set(STORAGE_KEYS.prefs, prefs);
+    await runSearch(prefs);
+    // The map opens on recommendation #1, the best match.
+    if (location.hash === '#/results') route(); else location.hash = '#/results';
+  } catch (err) {
+    if (!(err instanceof SearchError)) console.error(err);
+    showToast(err instanceof SearchError ? err.message : 'Something went wrong while searching. Please try again.');
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    label.textContent = pick.label;
+  }
+}
+
+function renderTests() {
+  const classes = getClasses();
+  $('#add-test-btn').hidden = !classes.length;
+  const tests = upcomingTests();
+  if (!classes.length) {
+    $('#tests-list').innerHTML = '<p class="muted-note">Add a class first, then you can add its tests.</p>';
+    return;
+  }
+  if (!tests.length) {
+    $('#tests-list').innerHTML = '<p class="muted-note">No tests coming up. Tap <strong>Add test</strong> when one is announced.</p>';
+    return;
+  }
+  $('#tests-list').innerHTML = `<ul class="test-list">${tests.map((t) => {
+    const n = daysUntil(t.date);
+    return `<li class="test-item${n <= 2 ? ' is-soon' : ''}">
+      <span class="test-when"><span class="countdown">${countdownText(n)}</span>
+        <span class="class-time">${esc(fmtDay(t.date))} · ${t.time ? esc(fmtClock(t.time)) : '<strong class="needs-time">Add a time</strong>'}</span></span>
+      <span class="class-info"><strong>${esc(t.type)} · ${esc(className(t.classId))}</strong>${t.note ? `<span class="class-room">${esc(t.note)}</span>` : ''}</span>
+      <span class="class-actions">
+        <button type="button" class="btn btn-small" data-edit-test="${esc(t.id)}">Edit</button>
+        <button type="button" class="btn btn-small btn-danger" data-delete-test="${esc(t.id)}" aria-label="Delete ${esc(t.type)} for ${esc(className(t.classId))}">Delete</button>
+      </span>
+    </li>`;
+  }).join('')}</ul>`;
+}
+
+function renderSchedule() {
+  const classes = getClasses();
+  const s = scheduleStatus();
+  $('#schedule-now').innerHTML = s.hasClasses ? scheduleStatusText(s) : '';
+  renderTests();
+
+  if (!classes.length) {
+    $('#schedule-list').innerHTML = `<div class="empty">
+        <h2>No classes yet</h2>
+        <p>Add your classes above. Reach will show how much free time you have before the next one.</p>
+      </div>`;
+    return;
+  }
+  const today = DAY_KEYS[new Date().getDay()];
+  $('#schedule-list').innerHTML = SCHEDULE_DAYS.map((day) => {
+    const list = classes.filter((c) => c.days.includes(day)).sort((a, b) => hhmmToMin(a.start) - hhmmToMin(b.start));
+    if (!list.length) return '';
+    return `<section class="schedule-day${day === today ? ' is-today' : ''}">
+      <h2>${DAY_NAMES[day]}${day === today ? ' <span class="today-tag">Today</span>' : ''}</h2>
+      <ul>${list.map((c) => `
+        <li class="class-item">
+          <span class="class-time">${esc(fmtClock(c.start))} – ${esc(fmtClock(c.end))}</span>
+          <span class="class-info"><strong>${esc(c.name)}</strong>${c.room ? `<span class="class-room">${esc(c.room)}</span>` : ''}</span>
+          <span class="class-actions">
+            <button type="button" class="btn btn-small" data-add-test="${esc(c.id)}" aria-label="Add a test for ${esc(c.name)}">+ Test</button>
+            <button type="button" class="btn btn-small" data-edit-class="${esc(c.id)}">Edit</button>
+            <button type="button" class="btn btn-small btn-danger" data-delete-class="${esc(c.id)}" aria-label="Delete ${esc(c.name)}">Delete</button>
+          </span>
+        </li>`).join('')}</ul>
+    </section>`;
+  }).join('');
+}
+
+function resetClassForm() {
+  const form = $('#class-form');
+  form.reset();
+  timeFields['class-start'].clear();
+  timeFields['class-end'].clear();
+  editingClassId = null;
+  $('#class-form-title').textContent = 'Add a class';
+  $('#class-submit').textContent = 'Add class';
+  $('#class-cancel').hidden = true;
+  $('#class-error').hidden = true;
+}
+
+/** Show an error under a form and focus the field it's about. */
+function formError(box, msg, field) {
+  box.textContent = msg;
+  box.hidden = false;
+  if (field) field.focus();
+}
+
+/** Open the test form, empty (optionally for one class) or filled in for editing. */
+function openTestForm({ classId, test } = {}) {
+  const form = $('#test-form');
+  const classes = getClasses().slice().sort((a, b) => a.name.localeCompare(b.name));
+  const pick = test ? test.classId : classId || (classes[0] && classes[0].id);
+  form.elements.classId.innerHTML = classes.map((c) => `<option value="${esc(c.id)}"${c.id === pick ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+  $$('input[name="testType"]', form).forEach((i) => { i.checked = i.value === (test ? test.type : 'Test'); });
+  form.elements.date.min = isoDate();
+  form.elements.date.value = test ? test.date : '';
+  form.elements.note.value = test ? test.note || '' : '';
+  timeFields['test-time'].set(test ? test.time : '');
+  editingTestId = test ? test.id : null;
+  $('#test-form-title').textContent = test ? 'Edit test' : 'Add a test';
+  $('#test-submit').textContent = test ? 'Save changes' : 'Add test';
+  $('#test-error').hidden = true;
+  form.hidden = false;
+  $('#add-test-btn').hidden = true;
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  form.elements.date.focus({ preventScroll: true });
+}
+
+function closeTestForm() {
+  $('#test-form').hidden = true;
+  editingTestId = null;
+  $('#add-test-btn').hidden = !getClasses().length;
+}
+
+/** If the test's class meets on the picked day, use the class time as the test time. */
+function suggestTestTime() {
+  const form = $('#test-form');
+  const cls = getClasses().find((c) => c.id === form.elements.classId.value);
+  if (!cls || !form.elements.date.value || timeFields['test-time'].get()) return;
+  if (cls.days.includes(DAY_KEYS[parseIsoDate(form.elements.date.value).getDay()])) timeFields['test-time'].set(cls.start);
+}
+
+function setupSchedule() {
+  const form = $('#class-form');
+  $('#class-days').innerHTML = SCHEDULE_DAYS.map((d) => `
+    <label class="chip">
+      <input type="checkbox" name="days" value="${d}">
+      <span class="chip-face">${DAY_LABELS[d]}</span>
+    </label>`).join('');
+
+  const startField = makeSmartTime($('#class-start'), { onChange: () => timeFields['class-end'] && timeFields['class-end'].refresh() });
+  const endField = makeSmartTime($('#class-end'), {
+    after: () => { const v = startField.peek(); return v ? hhmmToMin(v) : null; },
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = form.elements;
+    const name = f.name.value.trim();
+    const days = $$('input[name="days"]:checked', form).map((i) => i.value);
+    const start = startField.get();
+    const end = endField.get();
+    const showError = (msg, field) => formError($('#class-error'), msg, field);
+    if (!name) return showError('Give the class a name.', f.name);
+    if (!days.length) return showError('Pick at least one day.');
+    if (!start) return showError(start === null ? 'That start time doesn\'t look right. Try something like 930.' : 'Enter a start time.', f.start);
+    if (!end) return showError(end === null ? 'That end time doesn\'t look right. Try something like 1045.' : 'Enter an end time.', f.end);
+    if (hhmmToMin(end) <= hhmmToMin(start)) return showError('The class has to end after it starts.', f.end);
+
+    const entry = { id: editingClassId || `c${Date.now().toString(36)}`, name, room: f.room.value.trim(), days, start, end };
+    const list = getClasses().filter((c) => c.id !== entry.id).concat(entry);
+    if (!store.set(STORAGE_KEYS.schedule, list)) return showError("Couldn't save. Your browser is blocking storage.");
+    showToast(editingClassId ? `Updated ${name}` : `Added ${name}`);
+    resetClassForm();
+    renderSchedule();
+  });
+
+  $('#class-cancel').addEventListener('click', resetClassForm);
+
+  // Tests
+  const testForm = $('#test-form');
+  $('#test-types').innerHTML = TEST_TYPES.map((t) => `
+    <label class="chip">
+      <input type="radio" name="testType" value="${t}">
+      <span class="chip-face">${t}</span>
+    </label>`).join('');
+  makeSmartTime($('#test-time'));
+  $('#add-test-btn').addEventListener('click', () => openTestForm());
+  $('#test-cancel').addEventListener('click', closeTestForm);
+  testForm.elements.date.addEventListener('change', suggestTestTime);
+  testForm.elements.classId.addEventListener('change', suggestTestTime);
+
+  testForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = testForm.elements;
+    const time = timeFields['test-time'].get();
+    const showError = (msg, field) => formError($('#test-error'), msg, field);
+    if (!f.classId.value) return showError('Pick a class.', f.classId);
+    if (!f.date.value) return showError('Pick the date of the test.', f.date);
+    if (daysUntil(f.date.value) < 0) return showError('That date has already passed.', f.date);
+    // Required: Reach plans your free time around the test, so it needs to know when it starts.
+    if (!time) return showError(time === null ? 'That time doesn\'t look right. Try something like 930.' : 'Enter the time of the test.', f.time);
+
+    const type = TEST_TYPES.includes(f.testType.value) ? f.testType.value : 'Test';
+    const entry = { id: editingTestId || `t${Date.now().toString(36)}`, classId: f.classId.value, type, date: f.date.value, time, note: f.note.value.trim() };
+    // Keep the list tidy: drop tests that are more than a week old.
+    const list = getTests().filter((t) => t.id !== entry.id && daysUntil(t.date) >= -7).concat(entry);
+    if (!store.set(STORAGE_KEYS.tests, list)) return showError("Couldn't save. Your browser is blocking storage.");
+    showToast(`${editingTestId ? 'Updated' : 'Added'} ${type.toLowerCase()} for ${className(entry.classId)}`);
+    closeTestForm();
+    renderSchedule();
+  });
+
+  $('#tests-list').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-delete-test]');
+    if (del) {
+      store.set(STORAGE_KEYS.tests, getTests().filter((t) => t.id !== del.dataset.deleteTest));
+      if (editingTestId === del.dataset.deleteTest) closeTestForm();
+      showToast('Test deleted');
+      renderSchedule();
+      return;
+    }
+    const edit = e.target.closest('[data-edit-test]');
+    if (edit) {
+      const test = getTests().find((t) => t.id === edit.dataset.editTest);
+      if (test) openTestForm({ test });
+    }
+  });
+
+  $('#schedule-list').addEventListener('click', (e) => {
+    const addTest = e.target.closest('[data-add-test]');
+    if (addTest) { openTestForm({ classId: addTest.dataset.addTest }); return; }
+    const del = e.target.closest('[data-delete-class]');
+    if (del) {
+      const id = del.dataset.deleteClass;
+      const cls = getClasses().find((c) => c.id === id);
+      const tests = getTests();
+      const theirs = tests.filter((t) => t.classId === id).length;
+      store.set(STORAGE_KEYS.schedule, getClasses().filter((c) => c.id !== id));
+      if (theirs) store.set(STORAGE_KEYS.tests, tests.filter((t) => t.classId !== id));
+      if (editingClassId === id) resetClassForm();
+      if (!getClasses().length) closeTestForm();
+      if (cls) showToast(`Deleted ${cls.name}${theirs ? ` and its ${theirs === 1 ? 'test' : `${theirs} tests`}` : ''}`);
+      renderSchedule();
+      return;
+    }
+    const edit = e.target.closest('[data-edit-class]');
+    if (edit) {
+      const cls = getClasses().find((c) => c.id === edit.dataset.editClass);
+      if (!cls) return;
+      editingClassId = cls.id;
+      const f = form.elements;
+      f.name.value = cls.name;
+      f.room.value = cls.room || '';
+      startField.set(cls.start);
+      endField.set(cls.end);
+      $$('input[name="days"]', form).forEach((i) => { i.checked = cls.days.includes(i.value); });
+      $('#class-form-title').textContent = `Edit ${cls.name}`;
+      $('#class-submit').textContent = 'Save changes';
+      $('#class-cancel').hidden = false;
+      $('#class-error').hidden = true;
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      f.name.focus({ preventScroll: true });
+    }
+  });
+}
+
+/* --- Hash routing: #/welcome, #/plan, #/schedule, #/results, #/favorites --- */
 async function route() {
-  let view = (location.hash.replace(/^#\/?/, '') || 'plan').split('?')[0];
-  if (!['plan', 'results', 'favorites'].includes(view)) view = 'plan';
+  // First visit with no page in the URL: show the welcome cover once.
+  const fallback = store.get(STORAGE_KEYS.welcomed, false) ? 'plan' : 'welcome';
+  let view = (location.hash.replace(/^#\/?/, '') || fallback).split('?')[0];
+  if (!['welcome', 'plan', 'schedule', 'results', 'favorites'].includes(view)) view = 'plan';
+  if (view === 'welcome') store.set(STORAGE_KEYS.welcomed, true);
 
   if (view === 'results' && !state.results) {
     // Page was refreshed on #/results: re-run the last search if we can.
@@ -2362,12 +3117,15 @@ async function route() {
 
   $$('.view').forEach((v) => { v.hidden = v.dataset.view !== view; });
   document.body.classList.toggle('map-mode', view === 'results'); // full-screen map, no footer
+  $('#back-to-map').hidden = view === 'results' || !state.results; // "Back to map" once there's a map to go back to
   if (view !== 'results' && isSheetOpen()) closePlanSheet();
   $$('[data-nav]').forEach((a) => {
     const active = a.dataset.nav === view || (view === 'results' && a.dataset.nav === 'plan');
     if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
 
+  if (view === 'plan') renderScheduleHint();
+  if (view === 'schedule') renderSchedule();
   if (view === 'results') renderResults();
   if (view === 'favorites') renderFavorites();
   window.scrollTo({ top: 0 });
@@ -2441,8 +3199,16 @@ function registerServiceWorker() {
   }
 }
 
+/* --- Back to map ---
+   Bottom-left button on the other pages, shown once you've searched. It reopens the results map
+   on the place you were looking at (MAP.index), without searching again. */
+function setupBackToMap() {
+  $('#back-to-map').addEventListener('click', () => { MAP.resume = true; });
+}
+
 async function init() {
   setupTheme();
+  setupBackToMap();
   setupDelegation();
   try {
     await loadData();
@@ -2459,8 +3225,11 @@ async function init() {
   setupMapControls();
   setupPlanSheet();
   setupForm();
+  setupSchedule();
   updateFavCount();
   window.addEventListener('hashchange', route);
+  // The favorites tree has a phone layout and a wide layout: redraw it when the screen crosses over.
+  if (window.matchMedia) window.matchMedia('(max-width: 600px)').addEventListener?.('change', () => { if (!$('#view-favorites').hidden) renderFavorites(); });
   await route();
   registerServiceWorker();
 }

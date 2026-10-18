@@ -54,7 +54,51 @@ python3 -m http.server 8000
 | `app.js` | All logic, in numbered sections. **Section 1 (`CONFIG`) holds every tunable number**; section 3b is the Geoapify live search |
 | `destinations.json` | Curated San Jose places + San Jose ZIP centroids (used offline) |
 | `sw.js` | Offline cache (network-first, so you always get fresh code while developing) |
-| `vendor/leaflet/` | [Leaflet](https://leafletjs.com) 1.9.4 map library, bundled locally (BSD-2 license, see its `LICENSE`). No build step, no CDN |
+| `leaflet.js`, `leaflet.css` | [Leaflet](https://leafletjs.com) 1.9.4 map library, bundled locally (BSD-2 license, see `LICENSE`). No build step, no CDN |
+| `logo-mark.png`, `logo-icon.png` | Reach's tree-and-hand logo: the mark on a transparent background (header, welcome page, Ask Reach), and on a white rounded square (browser tab and home-screen icon) |
+| `places.js` | Every-day places for Ask Reach: food, dessert, malls, groceries, restrooms, pharmacies, gyms, museums, movies, bookstores, drinking fountains, ATMs and gas. Finds the nearest one that's open and fits your time (typical hours assumed when the map doesn't list them) |
+| `routing.js` | Real travel times (Geoapify Routing, same key) for the place on screen: the map's place card and Ask Reach's walking/transit/driving rows. The app's quick estimates are still used to decide which places fit |
+| `agent.js`, `agent.css` | Pattern agent: learns which spots you pick at which moments (day, time, classes) and suggests "your usual". Stored on this device only |
+| `assistant.js`, `assistant.css` | **Ask Reach** assistant: tell it how you feel ("stressed", "need coffee", "I have 30 min") and it picks a spot using your schedule, tests and the pattern agent. Rule-based, no AI service or key. Its ids and classes start with `ask-` |
+| `chat.js`, `chat.css` | Local Chat: per-place chat rooms, opened from the **Chat** button on map cards (see **Local Chat** below) |
+| `supabase.js` | [supabase-js](https://github.com/supabase/supabase-js) 2.45.4 client, bundled locally (MIT license) |
+| `supabase/chat.sql` | Database tables, security rules and spam limits for Local Chat. Run once in Supabase |
+
+## Local Chat
+
+**Reach Local Chat** is a public group chat for each place on the results map. There are no private messages, DMs or friend requests.
+
+- **Joining:** on the map, tap a pin, then **Chat** on its card (an icon-only button on phones). That opens the room for that place, like "San Jose Municipal Rose Garden Chat". Everyone who opens the same place joins the same room. The first time, you pick a display name.
+- **Or pick from a list:** the chat button in the map's bottom-right corner (beside the zoom buttons, next to Ask Reach) opens a list of every place on the map, numbered like the pins, with a search box. Picking one also moves the map to it.
+- **Minimize vs leave:** minimize (–) shrinks the chat back into its button. You stay in the room, and the button shows the place's name (on wide screens) and an unread count. Close (×) leaves the room, and the button goes back to opening the list. Leaving the map minimizes the chat; it isn't shown on other pages.
+- **Privacy:** no location is used. A room is named after the place you picked (for example `place-san-jose-municipal-rose-garden-1x2y3z`), and that's all the chat server sees.
+- **Real time:** new messages, removals and the "N online" count arrive instantly over Supabase Realtime. The last 100 messages load when you open a room, so history survives a refresh.
+- **Accounts:** none needed. Each browser gets an anonymous Supabase user ID, used to stop impersonation, rate-limit and ban.
+
+**Spam protection and moderation** (enforced in the database, in `supabase/chat.sql`):
+- Names 2–24 characters, messages up to 500. At most 5 messages per 15 seconds and 30 per 5 minutes per person; no repeating the same message within a minute.
+- **Report** (hover or tap a message): 3 reports from different people remove the message automatically. Every report keeps a copy of the message for review.
+- **Moderators** see **Remove** and **Ban** on every message. Ban blocks that person from posting and removes their messages from the last 24 hours.
+
+### Setting up Local Chat (about 5 minutes)
+
+Until this is done the button still shows, with a "not set up yet" notice. No fake messages are shown.
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. **Authentication > Sign In / Providers:** turn on **Allow anonymous sign-ins**. (Consider turning on CAPTCHA for sign-ins under Authentication > Attack Protection once the site is public.)
+3. **SQL Editor > New query:** paste all of `supabase/chat.sql` and click **Run**. It creates the tables, security rules and limits, and turns on Realtime for messages. It's safe to run again.
+4. **Project Settings > API:** copy the **Project URL** and the **anon public** key into `config.js`:
+   ```js
+   SUPABASE_URL: 'https://abcd1234.supabase.co',
+   SUPABASE_ANON_KEY: 'eyJhbGciOi...',
+   ```
+   The anon key is designed to be public; the database rules decide what it can do. **Never** put the `service_role` key in `config.js`.
+5. Reload Reach, run a search, tap a pin and press **Chat**. Test with a second device or a private window opening the same place.
+
+**Becoming a moderator:** open any place's chat, ⋯ menu > **Copy my chat ID**, then in the SQL Editor run
+`insert into public.chat_moderators (user_id) values ('PASTE-ID-HERE');` and reopen the chat.
+Review reports with `select * from public.chat_reports order by created_at desc;` and unban with `delete from public.chat_bans where user_id = '...';`.
+Anonymous IDs live in the browser, so clearing site data gives you a new ID (and drops moderator status).
 
 ## Parks or study spots
 
