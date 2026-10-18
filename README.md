@@ -14,19 +14,7 @@ Places come from two sources:
 
 > ⚠️ **`destinations.json` is SAMPLE DATA.** Coordinates, hours, fees, amenities and ZIP centroids are best-effort estimates and have not been verified on site. Every destination has a `verify` list of fields to check first.
 
-## API key (Geoapify)
 
-The key lives in **`config.js`**:
-
-```js
-window.GREENESCAPE_CONFIG = { GEOAPIFY_KEY: 'your-key-here' };
-```
-
-- The free plan allows 3,000 credits a day. One search uses about 3 credits: a ZIP lookup (cached forever) plus two place searches (cached 7 days per area).
-- **The key is visible to anyone who opens the site.** Before you share it publicly, restrict the key to your site's address in the [Geoapify dashboard](https://myprojects.geoapify.com).
-- With an empty key, the app still works for San Jose ZIPs using only the curated places.
-
-Open-Meteo (weather) and Google Maps links need no key.
 
 ---
 
@@ -193,14 +181,7 @@ Copy an entry in `destinations.json` and fill in every field. Allowed values:
 - `activities`: `relaxing`, `walking`, `hiking`, `exercise`, `picnic`
 - `exposure`: `exposed`, `partial`, `sheltered`
 
-## Debugging
 
-Pure functions are exposed in the browser console:
-
-```js
-Reach.haversineKm({lat:37.335,lng:-121.881},{lat:37.3318,lng:-121.9282})
-Reach.state.results   // the last search, with every number behind every verdict
-```
 
 ## Out of scope (for now)
 
